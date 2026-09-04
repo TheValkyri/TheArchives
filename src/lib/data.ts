@@ -48,12 +48,59 @@ export const mediaItems: MediaItem[] = [];
 
 export const albums: Album[] = [];
 
-export const stats = [
+export interface StatItem {
+  label: string;
+  value: number;
+}
+
+export const stats: StatItem[] = [
   { label: "Bức ảnh lưu trữ", value: 0 },
   { label: "Thước phim tư liệu", value: 0 },
   { label: "Sự kiện tác nghiệp", value: 0 },
   { label: "Thành viên CLB", value: 18 },
 ];
+
+export async function getLiveStats(): Promise<StatItem[]> {
+  if (!isSupabaseConfigured || !supabase) {
+    return stats;
+  }
+
+  try {
+    const { count: photoCount } = await supabase
+      .from("media_items")
+      .select("*", { count: "exact", head: true })
+      .eq("type", "photo");
+
+    const { count: videoCount } = await supabase
+      .from("media_items")
+      .select("*", { count: "exact", head: true })
+      .eq("type", "video");
+
+    const { count: albumCount } = await supabase
+      .from("albums")
+      .select("*", { count: "exact", head: true });
+
+    let eventCount = albumCount || 0;
+    if (eventCount === 0) {
+      const { data: catData } = await supabase
+        .from("media_items")
+        .select("category");
+      if (catData && catData.length > 0) {
+        const uniqueCats = new Set(catData.map((c) => c.category));
+        eventCount = uniqueCats.size;
+      }
+    }
+
+    return [
+      { label: "Bức ảnh lưu trữ", value: photoCount ?? 0 },
+      { label: "Thước phim tư liệu", value: videoCount ?? 0 },
+      { label: "Sự kiện tác nghiệp", value: eventCount },
+      { label: "Thành viên CLB", value: 18 },
+    ];
+  } catch {
+    return stats;
+  }
+}
 
 export function formatMediaSrc(src: string): string {
   if (!src) return "/logo.jpg";

@@ -3,11 +3,13 @@
 import { useState, useEffect } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import Image from "next/image";
-import { ArrowDown, Images, Sparkle, UploadSimple } from "@phosphor-icons/react";
+import { ArrowDown, Images, Sparkle, UploadSimple, Eye } from "@phosphor-icons/react";
 import { getLiveMediaItems, type MediaItem } from "@/lib/data";
+import { MediaLightbox } from "./media-lightbox";
 
 export function Hero() {
   const [latestMedia, setLatestMedia] = useState<MediaItem[]>([]);
+  const [activeItem, setActiveItem] = useState<MediaItem | null>(null);
   const reduce = useReducedMotion();
 
   const refreshLatest = () => {
@@ -129,23 +131,25 @@ export function Hero() {
                 </div>
                 <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-none snap-x snap-mandatory">
                   {latestMedia.map((img) => (
-                    <div
+                    <motion.div
                       key={img.id}
-                      className="relative shrink-0 w-44 aspect-[4/3] rounded-xl overflow-hidden bg-bg-card border border-border-subtle snap-start"
+                      layoutId={`media-card-${img.id}`}
+                      onClick={() => setActiveItem(img)}
+                      className="relative shrink-0 w-44 aspect-[4/3] rounded-xl overflow-hidden bg-bg-card border border-border-subtle snap-start cursor-pointer group active:scale-95 transition-transform"
                     >
                       <Image
                         src={img.src}
                         alt={img.title}
                         fill
                         unoptimized
-                        className="object-cover"
+                        className="object-cover transition-transform duration-500 group-hover:scale-105"
                         sizes="176px"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
                       <span className="absolute bottom-2 left-2 text-[10px] text-white/90 font-medium px-2 py-0.5 rounded bg-black/40 backdrop-blur-xs">
                         {img.category}
                       </span>
-                    </div>
+                    </motion.div>
                   ))}
                 </div>
               </motion.div>
@@ -157,32 +161,54 @@ export function Hero() {
             initial={reduce ? false : { opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="hidden lg:grid col-span-6 grid-cols-2 gap-3.5"
+            className={`hidden lg:grid col-span-6 ${
+              latestMedia.length === 1 ? "grid-cols-1 max-w-[460px] mx-auto w-full" : "grid-cols-2"
+            } gap-3.5`}
           >
             {latestMedia.length > 0 ? (
-              latestMedia.map((img, i) => (
-                <div
-                  key={img.id}
-                  className={`relative overflow-hidden rounded-2xl bg-bg-card border border-border-subtle p-1 ${
-                    i === 0 ? "row-span-2 aspect-[4/5]" : i === 1 ? "aspect-[4/3]" : i === 2 ? "aspect-square" : "aspect-[4/3.2]"
-                  }`}
-                >
-                  <div className="relative w-full h-full rounded-xl overflow-hidden">
-                    <Image
-                      src={img.src}
-                      alt={img.title}
-                      fill
-                      unoptimized
-                      className="object-cover transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105"
-                      sizes="(max-width: 1024px) 0vw, 25vw"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/80 via-transparent to-transparent pointer-events-none" />
-                    <span className="absolute bottom-3 left-3 text-[11px] font-mono text-white/90 bg-bg-primary/70 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-none">
-                      {img.category}
-                    </span>
-                  </div>
-                </div>
-              ))
+              latestMedia.map((img, i) => {
+                const isSingle = latestMedia.length === 1;
+                const aspectClass = isSingle
+                  ? "aspect-[4/5] shadow-2xl"
+                  : i === 0
+                  ? "row-span-2 aspect-[4/5]"
+                  : i === 1
+                  ? "aspect-[4/3]"
+                  : i === 2
+                  ? "aspect-square"
+                  : "aspect-[4/3.2]";
+
+                return (
+                  <motion.div
+                    key={img.id}
+                    layoutId={`media-card-${img.id}`}
+                    onClick={() => setActiveItem(img)}
+                    className={`relative overflow-hidden rounded-2xl bg-bg-card border border-border-subtle p-1 cursor-pointer group hover:border-accent-blue/50 transition-colors duration-300 ${aspectClass}`}
+                  >
+                    <div className="relative w-full h-full rounded-xl overflow-hidden">
+                      <Image
+                        src={img.src}
+                        alt={img.title}
+                        fill
+                        unoptimized
+                        className="object-cover transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:scale-105"
+                        sizes="(max-width: 1024px) 0vw, 25vw"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/80 via-transparent to-transparent pointer-events-none" />
+                      <span className="absolute bottom-3 left-3 text-[11px] font-mono text-white/90 bg-bg-primary/70 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-none">
+                        {img.category}
+                      </span>
+                      {/* Hover cue with Eye icon */}
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 backdrop-blur-[2px]">
+                        <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/20 text-white text-xs font-medium backdrop-blur-md border border-white/30 shadow-lg">
+                          <Eye size={14} weight="bold" />
+                          <span>Xem chi tiết</span>
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })
             ) : (
               /* State khi chưa có ảnh nào trong DB: Card đại diện chính thức của CLB */
               <div className="col-span-2 rounded-3xl bg-bg-card/70 border border-border-subtle p-8 text-center space-y-5 backdrop-blur-xl shadow-2xl">
@@ -221,6 +247,14 @@ export function Hero() {
           </motion.div>
         </div>
       </div>
+
+      {/* Fullscreen Lightbox with spring morphing */}
+      <MediaLightbox
+        item={activeItem}
+        items={latestMedia}
+        onClose={() => setActiveItem(null)}
+        onNavigate={(item) => setActiveItem(item)}
+      />
     </section>
   );
 }

@@ -97,20 +97,22 @@ export function MediaLightbox({
     document.body.removeChild(a);
   };
 
-  if (!item) return null;
-
   return (
     <AnimatePresence>
-      <motion.div
-        initial={reduce ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.25 }}
-        className="fixed inset-0 z-[100] bg-bg-primary/95 backdrop-blur-2xl flex flex-col justify-between overflow-y-auto"
-        role="dialog"
-        aria-modal="true"
-        aria-label={item.title}
-      >
+      {item && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          className="fixed inset-0 z-[100] bg-bg-primary/95 backdrop-blur-2xl flex flex-col justify-between overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-label={item.title}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+        >
         {/* Top Header */}
         <div className="flex items-center justify-between px-4 py-4 md:px-8 border-b border-border-subtle bg-bg-primary/60">
           <div className="flex items-center gap-3">
@@ -158,7 +160,15 @@ export function MediaLightbox({
             </button>
           )}
 
-          <div className="relative w-full max-w-5xl h-[55vh] md:h-[65vh] rounded-2xl overflow-hidden bg-bg-secondary shadow-2xl border border-border-subtle flex items-center justify-center">
+          <motion.div
+            layoutId={`media-card-${item.id}`}
+            transition={{
+              type: "spring",
+              damping: 28,
+              stiffness: 280,
+            }}
+            className="relative w-full max-w-5xl h-[55vh] md:h-[65vh] rounded-2xl overflow-hidden bg-bg-secondary shadow-2xl border border-border-subtle flex items-center justify-center"
+          >
             <Image
               src={item.src}
               alt={item.title}
@@ -200,7 +210,7 @@ export function MediaLightbox({
                 </div>
               </div>
             )}
-          </div>
+          </motion.div>
         </div>
 
         {/* Bottom Details Drawer */}
@@ -279,6 +289,7 @@ export function MediaLightbox({
           </div>
         </div>
       </motion.div>
-    </AnimatePresence>
-  );
+    )}
+  </AnimatePresence>
+);
 }

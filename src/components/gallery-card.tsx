@@ -23,6 +23,7 @@ export function GalleryCard({ item, index, onClick }: GalleryCardProps) {
 
   return (
     <motion.article
+      layoutId={`media-card-${item.id}`}
       onClick={onClick}
       initial={reduce ? false : { opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
