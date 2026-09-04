@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, isS3Configured } from "@/lib/s3";
-import { Readable } from "stream";
 import fs from "fs";
 import path from "path";
 
@@ -11,7 +10,7 @@ export async function GET(
 ) {
   try {
     if (!isS3Configured || !s3Client) {
-      return NextResponse.redirect(new URL("/logo.jpg", req.url), 307);
+      return getFallbackResponse();
     }
 
     const { key } = await props.params;
@@ -19,7 +18,7 @@ export async function GET(
     const bucket = process.env.S3_BUCKET_NAME;
 
     if (!bucket || !fileKey) {
-      return NextResponse.redirect(new URL("/logo.jpg", req.url), 307);
+      return getFallbackResponse();
     }
 
     const command = new GetObjectCommand({
@@ -30,37 +29,55 @@ export async function GET(
     const response = await s3Client.send(command);
     const contentType = response.ContentType || "image/jpeg";
 
-    const nodeStream = response.Body as Readable;
-    const webStream = new ReadableStream({
-      start(controller) {
-        nodeStream.on("data", (chunk) => controller.enqueue(chunk));
-        nodeStream.on("end", () => controller.close());
-        nodeStream.on("error", (err) => controller.error(err));
-      },
-    });
+    if (!response.Body) {
+      return getFallbackResponse();
+    }
 
-    return new NextResponse(webStream, {
+    // transformToByteArray() tải toàn bộ dữ liệu ảnh thành Uint8Array an toàn,
+    // không bị lỗi timeout hoặc stream treo trên serverless Vercel
+    const byteArray = await response.Body.transformToByteArray();
+    const buffer = Buffer.from(byteArray);
+
+    return new NextResponse(buffer, {
+      status: 200,
       headers: {
         "Content-Type": contentType,
         "Cache-Control": "public, max-age=31536000, immutable",
       },
     });
   } catch (err: unknown) {
-    // Fallback: Nếu file đã bị xóa trên S3 hoặc không tìm thấy, trả về logo.jpg hoặc redirect để Next.js không bị lỗi 400
-    try {
-      const fallbackPath = path.resolve(process.cwd(), "public", "logo.jpg");
-      if (fs.existsSync(fallbackPath)) {
-        const fallbackBuffer = fs.readFileSync(fallbackPath);
-        return new NextResponse(fallbackBuffer, {
-          headers: {
-            "Content-Type": "image/jpeg",
-            "Cache-Control": "public, max-age=60",
-          },
-        });
-      }
-    } catch {
-      // ignore
-    }
-    return NextResponse.redirect(new URL("/logo.jpg", req.url), 307);
+    console.error("Lỗi lấy media từ S3:", err);
+    return getFallbackResponse();
   }
+}
+
+function getFallbackResponse() {
+  try {
+    const fallbackPath = path.resolve(process.cwd(), "public", "logo.jpg");
+    if (fs.existsSync(fallbackPath)) {
+      const fallbackBuffer = fs.readFileSync(fallbackPath);
+      return new NextResponse(fallbackBuffer, {
+        status: 200,
+        headers: {
+          "Content-Type": "image/jpeg",
+          "Cache-Control": "public, max-age=60",
+        },
+      });
+    }
+  } catch {
+    // ignore
+  }
+
+  // Dự phòng pixel trong suốt chuẩn định dạng PNG nếu không đọc được file tĩnh
+  const transparentPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    "base64"
+  );
+  return new NextResponse(transparentPng, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/png",
+      "Cache-Control": "public, max-age=60",
+    },
+  });
 }

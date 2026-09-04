@@ -10,12 +10,31 @@ export function Hero() {
   const [latestMedia, setLatestMedia] = useState<MediaItem[]>([]);
   const reduce = useReducedMotion();
 
-  useEffect(() => {
+  const refreshLatest = () => {
     getLiveMediaItems().then((items) => {
-      if (items && items.length > 0) {
+      if (items) {
         setLatestMedia(items.slice(0, 4));
       }
     });
+  };
+
+  useEffect(() => {
+    refreshLatest();
+
+    const handleStorage = () => refreshLatest();
+    const handleVisibility = () => {
+      if (!document.hidden) refreshLatest();
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("focus", handleVisibility);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", handleVisibility);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, []);
 
   return (
