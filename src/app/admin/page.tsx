@@ -16,6 +16,9 @@ import {
   User,
   LinkSimple,
   Globe,
+  ArrowsClockwise,
+  Images,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { isS3Configured } from "@/lib/s3";
@@ -39,9 +42,15 @@ export default function AdminDashboardPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [activeTab, setActiveTab] = useState<"upload" | "album" | "status">("upload");
+  const [activeTab, setActiveTab] = useState<"upload" | "manage" | "album" | "status">("upload");
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Manage media state
+  const [existingMedia, setExistingMedia] = useState<any[]>([]);
+  const [loadingExisting, setLoadingExisting] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
+  const [manageSearch, setManageSearch] = useState("");
 
   // Upload state
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
@@ -79,6 +88,59 @@ export default function AdminDashboardPage() {
     }
     checkAuth();
   }, [router]);
+
+  const fetchExistingMedia = async () => {
+    setLoadingExisting(true);
+    try {
+      if (isSupabaseConfigured && supabase) {
+        const { data, error } = await supabase
+          .from("media_items")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (error) throw error;
+        setExistingMedia(data || []);
+      }
+    } catch (err: unknown) {
+      console.error("Lỗi lấy danh sách tư liệu:", err);
+    } finally {
+      setLoadingExisting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "manage") {
+      fetchExistingMedia();
+    }
+  }, [activeTab]);
+
+  const handleDeleteMedia = async (id: string, src: string, title: string) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa tư liệu "${title}"? Bản ghi và file lưu trữ sẽ bị xóa vĩnh viễn.`)) {
+      return;
+    }
+
+    try {
+      // 1. Thử xóa trực tiếp từ client nếu có phiên Supabase
+      if (isSupabaseConfigured && supabase) {
+        await supabase.from("media_items").delete().eq("id", id);
+      }
+
+      // 2. Gọi API để đảm bảo xóa trên server và dọn file S3
+      const res = await fetch("/api/media/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, src }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Xóa thất bại");
+
+      setExistingMedia((prev) => prev.filter((item) => item.id !== id));
+      setDeleteMsg(`Đã xóa thành công "${title}" khỏi hệ thống!`);
+      setTimeout(() => setDeleteMsg(null), 4000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Xóa thất bại";
+      alert(`Lỗi: ${msg}`);
+    }
+  };
 
   const handleLogout = async () => {
     if (supabase) {
@@ -284,6 +346,17 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const filteredExistingMedia = existingMedia.filter((item) => {
+    if (!manageSearch) return true;
+    const q = manageSearch.toLowerCase();
+    return (
+      item.title?.toLowerCase().includes(q) ||
+      item.category?.toLowerCase().includes(q) ||
+      item.school_year?.toLowerCase().includes(q) ||
+      item.photographer?.toLowerCase().includes(q)
+    );
+  });
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-bg-primary text-text-muted">
@@ -342,7 +415,7 @@ export default function AdminDashboardPage() {
       {/* Main Container */}
       <main className="max-w-[1400px] mx-auto px-4 md:px-8 py-8">
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-3 border-b border-border-subtle pb-4">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border-subtle pb-4">
           <button
             onClick={() => setActiveTab("upload")}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold transition-all duration-200 ${
@@ -356,10 +429,25 @@ export default function AdminDashboardPage() {
           </button>
 
           <button
+            onClick={() => {
+              setActiveTab("manage");
+              fetchExistingMedia();
+            }}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold transition-all duration-200 ${
+              activeTab === "manage"
+                ? "bg-accent-blue text-white shadow-md shadow-accent-blue/25"
+                : "bg-bg-card hover:bg-white/5 text-text-secondary border border-border-subtle"
+            }`}
+          >
+            <Images size={16} weight="bold" />
+            <span>Quản lý tư liệu ({existingMedia.length})</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab("album")}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold transition-all duration-200 ${
               activeTab === "album"
-                ? "bg-accent-blue text-white shadow-md shadow-accent-blue/25"
+                ? "bg-accent-gold text-bg-primary font-bold shadow-md shadow-accent-gold/25"
                 : "bg-bg-card hover:bg-white/5 text-text-secondary border border-border-subtle"
             }`}
           >
@@ -591,7 +679,125 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 2: CREATE ALBUM */}
+        {/* TAB 2: MANAGE & DELETE MEDIA */}
+        {activeTab === "manage" && (
+          <div className="mt-8 space-y-6">
+            <div className="rounded-3xl bg-bg-card border border-border-subtle p-6 md:p-8 space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-text-primary flex items-center gap-2">
+                    <Images size={24} className="text-accent-blue" weight="bold" />
+                    <span>Quản lý & Dọn dẹp tư liệu ({existingMedia.length})</span>
+                  </h2>
+                  <p className="text-xs text-text-muted mt-1">
+                    Danh sách tư liệu đã được lưu trữ trong Supabase và S3 PIKAMC.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                    <input
+                      type="text"
+                      value={manageSearch}
+                      onChange={(e) => setManageSearch(e.target.value)}
+                      placeholder="Lọc tiêu đề, năm..."
+                      className="pl-8 pr-3 py-1.5 rounded-full bg-bg-secondary border border-border-subtle text-xs text-text-primary focus:border-accent-blue focus:outline-none w-48"
+                    />
+                  </div>
+
+                  <button
+                    onClick={fetchExistingMedia}
+                    disabled={loadingExisting}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-white/5 hover:bg-white/10 border border-border-subtle transition-all duration-200"
+                  >
+                    <ArrowsClockwise size={14} className={loadingExisting ? "animate-spin" : ""} />
+                    <span>Làm mới</span>
+                  </button>
+                </div>
+              </div>
+
+              {deleteMsg && (
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+                  <CheckCircle size={16} weight="fill" />
+                  <span>{deleteMsg}</span>
+                </div>
+              )}
+
+              <div className="p-4 rounded-2xl bg-accent-blue/10 border border-accent-blue/20 text-xs text-text-secondary">
+                <span className="font-semibold text-accent-blue">💡 Ghi chú dọn dẹp: </span>
+                Nếu bạn đã vào bảng điều khiển S3 để xóa thư mục/file nhưng trang chủ vẫn hiển thị bài đăng (hoặc báo lỗi 400), hãy tìm mục đó ở bảng bên dưới và bấm nút <strong className="text-accent-red font-semibold">Xóa</strong>. Thao tác này sẽ gỡ hoàn toàn bản ghi thừa trong Supabase.
+              </div>
+
+              {loadingExisting ? (
+                <div className="py-16 text-center text-text-muted text-xs">
+                  Đang tải danh sách tư liệu từ cơ sở dữ liệu...
+                </div>
+              ) : filteredExistingMedia.length === 0 ? (
+                <div className="py-16 text-center text-text-muted text-xs">
+                  {existingMedia.length === 0
+                    ? "Chưa có tư liệu nào trong hệ thống hoặc bảng media_items đang trống."
+                    : "Không tìm thấy tư liệu nào khớp với từ khóa tìm kiếm."}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredExistingMedia.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-2xl bg-bg-secondary border border-border-subtle p-4 flex flex-col justify-between space-y-3 group hover:border-border-hover transition-all"
+                    >
+                      <div className="flex gap-3">
+                        <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-bg-primary shrink-0 border border-border-subtle">
+                          <img
+                            src={item.src}
+                            alt={item.title}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = "/logo.jpg";
+                            }}
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-xs font-semibold text-text-primary line-clamp-2 leading-snug">
+                            {item.title}
+                          </h4>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent-blue/15 text-accent-blue font-mono">
+                              {item.category}
+                            </span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-text-muted font-mono">
+                              {item.school_year}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-text-muted mt-1.5 truncate">
+                            {item.photographer} · {item.date}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-border-subtle flex items-center justify-between text-[11px]">
+                        <span className="text-text-muted font-mono text-[10px] truncate max-w-[160px]">
+                          {item.resolution || "Full HD"}
+                        </span>
+
+                        <button
+                          onClick={() => handleDeleteMedia(item.id, item.src, item.title)}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-accent-red hover:bg-accent-red/10 border border-accent-red/20 transition-all duration-200 font-medium"
+                          title="Xóa khỏi Database và S3"
+                        >
+                          <Trash size={14} weight="bold" />
+                          <span>Xóa</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: CREATE ALBUM */}
         {activeTab === "album" && (
           <div className="mt-8 max-w-2xl mx-auto">
             <div className="rounded-3xl bg-bg-card border border-border-subtle p-8 space-y-6">
