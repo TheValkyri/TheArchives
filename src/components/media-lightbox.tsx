@@ -163,6 +163,7 @@ export function MediaLightbox({
               src={item.src}
               alt={item.title}
               fill
+              unoptimized
               className="object-contain"
               priority
               sizes="(max-width: 1280px) 90vw, 1200px"

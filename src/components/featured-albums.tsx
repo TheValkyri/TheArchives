@@ -192,6 +192,7 @@ export function FeaturedAlbums() {
                   src={album.cover}
                   alt={album.title}
                   fill
+                  unoptimized
                   className="object-cover transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:scale-105"
                   sizes="420px"
                 />

@@ -48,6 +48,7 @@ export function GalleryCard({ item, index, onClick }: GalleryCardProps) {
           src={item.src}
           alt={item.title}
           fill
+          unoptimized
           className="object-cover transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:scale-105"
           sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
         />

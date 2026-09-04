@@ -137,6 +137,7 @@ export function Hero() {
                         src={img.src}
                         alt={img.title}
                         fill
+                        unoptimized
                         className="object-cover"
                         sizes="176px"
                       />
@@ -171,6 +172,7 @@ export function Hero() {
                       src={img.src}
                       alt={img.title}
                       fill
+                      unoptimized
                       className="object-cover transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105"
                       sizes="(max-width: 1024px) 0vw, 25vw"
                     />
