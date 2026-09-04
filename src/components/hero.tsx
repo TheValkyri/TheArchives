@@ -116,102 +116,92 @@ export function Hero() {
                 <span>Cổng Quản Trị</span>
               </a>
             </motion.div>
-
-            {/* Mobile Visual Strip if media exists */}
-            {latestMedia.length > 0 && (
-              <motion.div
-                initial={reduce ? false : { opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.32, ease: [0.16, 1, 0.3, 1] }}
-                className="lg:hidden pt-4"
-              >
-                <div className="flex items-center gap-2 text-xs text-text-muted mb-3">
-                  <span className="w-1.5 h-1.5 rounded-full bg-accent-gold" />
-                  <span>Ảnh tư liệu mới nhất:</span>
-                </div>
-                <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-none snap-x snap-mandatory">
-                  {latestMedia.map((img) => (
-                    <motion.div
-                      key={img.id}
-                      layoutId={`media-card-${img.id}`}
-                      onClick={() => setActiveItem(img)}
-                      className="relative shrink-0 w-44 aspect-[4/3] rounded-xl overflow-hidden bg-bg-card border border-border-subtle snap-start cursor-pointer group active:scale-95 transition-transform"
-                    >
-                      <Image
-                        src={img.src}
-                        alt={img.title}
-                        fill
-                        unoptimized
-                        className="object-cover transition-transform duration-500 group-hover:scale-105"
-                        sizes="176px"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-                      <span className="absolute bottom-2 left-2 text-[10px] text-white/90 font-medium px-2 py-0.5 rounded bg-black/40 backdrop-blur-xs">
-                        {img.category}
-                      </span>
-                    </motion.div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
           </div>
 
-          {/* Right Column: Hero Visual Stage */}
+          {/* Right Column: Hero Visual Stage (Always visible & responsive) */}
           <motion.div
             initial={reduce ? false : { opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className={`hidden lg:grid col-span-6 ${
-              latestMedia.length === 1 ? "grid-cols-1 max-w-[460px] mx-auto w-full" : "grid-cols-2"
-            } gap-3.5`}
+            className="w-full lg:col-span-6 flex justify-center items-center pt-4 lg:pt-0"
           >
             {latestMedia.length > 0 ? (
-              latestMedia.map((img, i) => {
-                const isSingle = latestMedia.length === 1;
-                const aspectClass = isSingle
-                  ? "aspect-[4/5] shadow-2xl"
-                  : i === 0
-                  ? "row-span-2 aspect-[4/5]"
-                  : i === 1
-                  ? "aspect-[4/3]"
-                  : i === 2
-                  ? "aspect-square"
-                  : "aspect-[4/3.2]";
-
-                return (
-                  <motion.div
-                    key={img.id}
-                    layoutId={`media-card-${img.id}`}
-                    onClick={() => setActiveItem(img)}
-                    className={`relative overflow-hidden rounded-2xl bg-bg-card border border-border-subtle p-1 cursor-pointer group hover:border-accent-blue/50 transition-colors duration-300 ${aspectClass}`}
-                  >
-                    <div className="relative w-full h-full rounded-xl overflow-hidden">
-                      <Image
-                        src={img.src}
-                        alt={img.title}
-                        fill
-                        unoptimized
-                        className="object-cover transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:scale-105"
-                        sizes="(max-width: 1024px) 0vw, 25vw"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/80 via-transparent to-transparent pointer-events-none" />
-                      <span className="absolute bottom-3 left-3 text-[11px] font-mono text-white/90 bg-bg-primary/70 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-none">
-                        {img.category}
+              latestMedia.length === 1 ? (
+                /* 1 Ảnh duy nhất: Chiếm trọn khung hình nổi bật */
+                <motion.div
+                  key={latestMedia[0].id}
+                  layoutId={`media-card-${latestMedia[0].id}`}
+                  onClick={() => setActiveItem(latestMedia[0])}
+                  className="relative w-full max-w-[420px] aspect-[4/5] rounded-3xl bg-bg-card border border-border-subtle p-2 cursor-pointer group hover:border-accent-blue/50 transition-all duration-300 shadow-2xl hover:shadow-accent-blue/15"
+                >
+                  <div className="relative w-full h-full rounded-2xl overflow-hidden bg-bg-secondary">
+                    <Image
+                      src={latestMedia[0].src}
+                      alt={latestMedia[0].title}
+                      fill
+                      unoptimized
+                      className="object-cover transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:scale-105"
+                      sizes="(max-width: 768px) 100vw, 420px"
+                      priority
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/90 via-transparent to-transparent pointer-events-none" />
+                    <div className="absolute bottom-3.5 left-3.5 right-3.5 flex items-center justify-between pointer-events-none">
+                      <span className="text-xs font-mono text-white/95 bg-bg-primary/80 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 shadow-sm">
+                        {latestMedia[0].category}
                       </span>
-                      {/* Hover cue with Eye icon */}
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 backdrop-blur-[2px]">
-                        <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/20 text-white text-xs font-medium backdrop-blur-md border border-white/30 shadow-lg">
-                          <Eye size={14} weight="bold" />
-                          <span>Xem chi tiết</span>
-                        </span>
-                      </div>
+                      <span className="text-[11px] font-mono text-white/80 bg-black/50 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10">
+                        {latestMedia[0].schoolYear}
+                      </span>
                     </div>
-                  </motion.div>
-                );
-              })
+                    {/* Hover cue with Eye icon */}
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 backdrop-blur-[2px]">
+                      <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/20 text-white text-xs font-medium backdrop-blur-md border border-white/30 shadow-lg">
+                        <Eye size={16} weight="bold" />
+                        <span>Xem toàn màn hình</span>
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              ) : (
+                /* Nhiều ảnh: Bento 2 cột */
+                <div className="grid grid-cols-2 gap-3.5 w-full max-w-[560px] mx-auto lg:max-w-none">
+                  {latestMedia.map((img, i) => (
+                    <motion.div
+                      key={img.id}
+                      layoutId={`media-card-${img.id}`}
+                      onClick={() => setActiveItem(img)}
+                      className={`relative overflow-hidden rounded-2xl bg-bg-card border border-border-subtle p-1 cursor-pointer group hover:border-accent-blue/50 transition-colors duration-300 ${
+                        i === 0 ? "row-span-2 aspect-[4/5]" : i === 1 ? "aspect-[4/3]" : i === 2 ? "aspect-square" : "aspect-[4/3.2]"
+                      }`}
+                    >
+                      <div className="relative w-full h-full rounded-xl overflow-hidden bg-bg-secondary">
+                        <Image
+                          src={img.src}
+                          alt={img.title}
+                          fill
+                          unoptimized
+                          className="object-cover transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:scale-105"
+                          sizes="(max-width: 1024px) 50vw, 25vw"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/80 via-transparent to-transparent pointer-events-none" />
+                        <span className="absolute bottom-3 left-3 text-[11px] font-mono text-white/90 bg-bg-primary/70 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-none">
+                          {img.category}
+                        </span>
+                        {/* Hover cue with Eye icon */}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 backdrop-blur-[2px]">
+                          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/20 text-white text-xs font-medium backdrop-blur-md border border-white/30 shadow-lg">
+                            <Eye size={14} weight="bold" />
+                            <span>Xem chi tiết</span>
+                          </span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              )
             ) : (
               /* State khi chưa có ảnh nào trong DB: Card đại diện chính thức của CLB */
-              <div className="col-span-2 rounded-3xl bg-bg-card/70 border border-border-subtle p-8 text-center space-y-5 backdrop-blur-xl shadow-2xl">
+              <div className="w-full max-w-[460px] rounded-3xl bg-bg-card/70 border border-border-subtle p-8 text-center space-y-5 backdrop-blur-xl shadow-2xl">
                 <div className="relative w-28 h-28 mx-auto rounded-full overflow-hidden ring-4 ring-accent-blue/30 shadow-2xl">
                   <Image
                     src="/logo.jpg"

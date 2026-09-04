@@ -20,10 +20,20 @@ export async function GET(
       return NextResponse.redirect(new URL("/logo.jpg", req.url), 307);
     }
 
+    const url = new URL(req.url);
+    const isDownload = url.searchParams.get("download") === "1" || url.searchParams.get("download") === "true";
+    const customFilename = url.searchParams.get("filename");
+    const filename = customFilename || fileKey.split("/").pop() || "the-archives-file";
+
     // Ký Presigned GET URL trong 1ms (chạy thuần CPU HMAC, không cần kết nối mạng từ Vercel sang S3)
     const command = new GetObjectCommand({
       Bucket: bucket,
       Key: fileKey,
+      ...(isDownload
+        ? {
+            ResponseContentDisposition: `attachment; filename="${encodeURIComponent(filename)}"`,
+          }
+        : {}),
     });
 
     const signedUrl = await getSignedUrl(s3Client, command, {

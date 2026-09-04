@@ -77,6 +77,8 @@ export function MediaLightbox({
     };
   }, [item]);
 
+  const [isDownloading, setIsDownloading] = useState(false);
+
   const handleShare = () => {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(window.location.href);
@@ -85,16 +87,43 @@ export function MediaLightbox({
     }
   };
 
-  const handleDownload = () => {
-    if (!item) return;
-    const a = document.createElement("a");
-    a.href = item.src;
-    a.download = `${item.title.toLowerCase().replace(/\s+/g, "-")}.jpg`;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  const handleDownload = async () => {
+    if (!item || isDownloading) return;
+    setIsDownloading(true);
+
+    const safeTitle = item.title.replace(/[/\\?%*:|"<>]/g, "-").trim() || "the-archives";
+    const ext = item.src.split("?")[0].split(".").pop() || (item.type === "video" ? "mp4" : "jpg");
+    const filename = `${safeTitle}.${ext}`;
+
+    try {
+      // 1. Thử tải qua fetch blob để lưu file trực tiếp vào máy
+      const res = await fetch(item.src);
+      if (!res.ok) throw new Error("Blob fetch failed");
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch {
+      // 2. Fallback: Dùng query download=1 kèm header Content-Disposition: attachment từ S3
+      // Dùng iframe ẩn để trình duyệt tải file trực tiếp về máy, không nhảy tab mới
+      const downloadUrl = `${item.src}${item.src.includes("?") ? "&" : "?"}download=1&filename=${encodeURIComponent(filename)}`;
+      const iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+      iframe.src = downloadUrl;
+      document.body.appendChild(iframe);
+      setTimeout(() => {
+        try {
+          document.body.removeChild(iframe);
+        } catch {}
+      }, 30000);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -280,10 +309,11 @@ export function MediaLightbox({
 
               <button
                 onClick={handleDownload}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-accent-red hover:bg-accent-red-hover text-white transition-all duration-200 active:scale-95 shadow-md hover:shadow-accent-red/20"
+                disabled={isDownloading}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-accent-red hover:bg-accent-red-hover disabled:opacity-60 text-white transition-all duration-200 active:scale-95 shadow-md hover:shadow-accent-red/20 cursor-pointer disabled:cursor-not-allowed"
               >
-                <DownloadSimple size={16} weight="bold" />
-                <span>Tải ảnh gốc</span>
+                <DownloadSimple size={16} weight="bold" className={isDownloading ? "animate-bounce" : ""} />
+                <span>{isDownloading ? "Đang tải xuống..." : "Tải ảnh gốc"}</span>
               </button>
             </div>
           </div>
