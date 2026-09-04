@@ -14,13 +14,32 @@ export function GalleryGrid() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeItem, setActiveItem] = useState<MediaItem | null>(null);
 
-  // Fetch dynamic items from Supabase if connected
-  useEffect(() => {
+  // Fetch dynamic items from Supabase with realtime tab sync
+  const refreshMedia = () => {
     getLiveMediaItems().then((live) => {
-      if (live && live.length > 0) {
+      if (live) {
         setItems(live);
       }
     });
+  };
+
+  useEffect(() => {
+    refreshMedia();
+
+    const handleStorage = () => refreshMedia();
+    const handleVisibility = () => {
+      if (!document.hidden) refreshMedia();
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("focus", handleVisibility);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", handleVisibility);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, []);
 
   const filteredItems = useMemo(() => {

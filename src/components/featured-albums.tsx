@@ -16,12 +16,31 @@ export function FeaturedAlbums() {
   const track = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
 
-  useEffect(() => {
+  const refreshAlbums = () => {
     getLiveAlbums().then((live) => {
-      if (live && live.length > 0) {
+      if (live) {
         setAlbumList(live);
       }
     });
+  };
+
+  useEffect(() => {
+    refreshAlbums();
+
+    const handleStorage = () => refreshAlbums();
+    const handleVisibility = () => {
+      if (!document.hidden) refreshAlbums();
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("focus", handleVisibility);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", handleVisibility);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, []);
 
   useEffect(() => {

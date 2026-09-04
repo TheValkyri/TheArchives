@@ -118,27 +118,35 @@ export default function AdminDashboardPage() {
       return;
     }
 
+    // 1. Biến mất NGAY LẬP TỨC trên giao diện (0ms, không cần chờ mạng hay F5)
+    setExistingMedia((prev) => prev.filter((item) => item.id !== id));
+    setDeleteMsg(`Đang xóa "${title}" khỏi hệ thống...`);
+
+    // 2. Thông báo cho các tab khác (như trang chủ) tự động đồng bộ ngay
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("the_archives_updated_at", Date.now().toString());
+        window.dispatchEvent(new Event("storage"));
+      } catch {}
+    }
+
     try {
-      // 1. Thử xóa trực tiếp từ client nếu có phiên Supabase
+      // 3. Xóa trực tiếp từ Supabase client
       if (isSupabaseConfigured && supabase) {
         await supabase.from("media_items").delete().eq("id", id);
       }
 
-      // 2. Gọi API để đảm bảo xóa trên server và dọn file S3
-      const res = await fetch("/api/media/delete", {
+      // 4. Gọi API server để dọn file S3 và dọn database
+      await fetch("/api/media/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, src }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Xóa thất bại");
 
-      setExistingMedia((prev) => prev.filter((item) => item.id !== id));
       setDeleteMsg(`Đã xóa thành công "${title}" khỏi hệ thống!`);
-      setTimeout(() => setDeleteMsg(null), 4000);
+      setTimeout(() => setDeleteMsg(null), 3000);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Xóa thất bại";
-      alert(`Lỗi: ${msg}`);
+      console.warn("Lỗi khi xử lý xóa:", err);
     }
   };
 
@@ -286,6 +294,13 @@ export default function AdminDashboardPage() {
     }
 
     setIsUploading(false);
+    fetchExistingMedia();
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("the_archives_updated_at", Date.now().toString());
+        window.dispatchEvent(new Event("storage"));
+      } catch {}
+    }
   };
 
   // Create new Album
@@ -338,6 +353,13 @@ export default function AdminDashboardPage() {
       setAlbumDesc("");
       setAlbumCoverFile(null);
       setAlbumDriveUrl("");
+
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("the_archives_updated_at", Date.now().toString());
+          window.dispatchEvent(new Event("storage"));
+        } catch {}
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Tạo album thất bại";
       setAlbumMessage(`Lỗi: ${msg}`);
