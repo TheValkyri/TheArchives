@@ -55,6 +55,21 @@ export const stats = [
   { label: "Thành viên CLB", value: 18 },
 ];
 
+export function formatMediaSrc(src: string): string {
+  if (!src) return "/logo.jpg";
+  if (src.includes("s3.pikamc.vn")) {
+    const parts = src.split("s3.pikamc.vn/")[1];
+    if (parts) {
+      const slashIdx = parts.indexOf("/");
+      if (slashIdx !== -1) {
+        const fileKey = parts.substring(slashIdx + 1);
+        return `/api/media/${fileKey}`;
+      }
+    }
+  }
+  return src;
+}
+
 // Hàm lấy dữ liệu động từ Supabase (nếu đã kết nối)
 export async function getLiveMediaItems(): Promise<MediaItem[]> {
   if (!isSupabaseConfigured || !supabase) {
@@ -79,7 +94,7 @@ export async function getLiveMediaItems(): Promise<MediaItem[]> {
       albumId: item.album_id,
       type: item.type,
       aspect: item.aspect || "landscape",
-      src: item.src,
+      src: formatMediaSrc(item.src),
       photographer: item.photographer,
       resolution: item.resolution || "Full HD",
       tags: item.tags || [],
@@ -109,7 +124,7 @@ export async function getLiveAlbums(): Promise<Album[]> {
       title: album.title,
       description: album.description || "",
       schoolYear: album.school_year,
-      cover: album.cover_url,
+      cover: formatMediaSrc(album.cover_url),
       count: 0,
       driveFolderUrl: album.drive_folder_url || undefined,
     }));
