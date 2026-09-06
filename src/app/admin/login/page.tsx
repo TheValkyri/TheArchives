@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Image from "next/image";
-import { Lock, EnvelopeSimple, ArrowRight, ShieldCheck } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, Lock, EnvelopeSimple } from "@phosphor-icons/react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState("");
@@ -20,9 +22,7 @@ export default function AdminLoginPage() {
 
     try {
       if (!isSupabaseConfigured || !supabase) {
-        throw new Error(
-          "Hệ thống Supabase chưa được kết nối. Vui lòng điền thông tin vào file .env.local"
-        );
+        throw new Error("Hệ thống chưa kết nối. Vui lòng kiểm tra cấu hình.");
       }
 
       const { data, error: authError } = await supabase.auth.signInWithPassword({
@@ -30,13 +30,8 @@ export default function AdminLoginPage() {
         password,
       });
 
-      if (authError) {
-        throw authError;
-      }
-
-      if (data.user) {
-        router.push("/admin");
-      }
+      if (authError) throw authError;
+      if (data.user) router.push("/admin");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Đăng nhập thất bại";
       setError(msg);
@@ -46,112 +41,115 @@ export default function AdminLoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-bg-primary">
-      {/* Background glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-accent-blue/10 blur-[140px] pointer-events-none rounded-full" />
+    <div className="ambient-sky relative flex min-h-screen items-center justify-center bg-bg p-4">
+      {/* Nút theme + quay về */}
+      <div className="fixed top-4 right-4 z-10 flex items-center gap-2">
+        <ThemeToggle />
+      </div>
+      <Link
+        href="/"
+        className="fixed top-5 left-5 z-10 flex items-center gap-1.5 text-[13px] font-medium text-ink-2 transition-colors duration-200 hover:text-ink"
+      >
+        <ArrowLeft size={14} />
+        Trang chủ
+      </Link>
 
-      <div className="w-full max-w-md relative z-10">
-        <div className="rounded-3xl bg-bg-card border border-border-subtle p-8 md:p-10 shadow-2xl backdrop-blur-xl">
-          {/* Header */}
-          <div className="text-center space-y-3">
-            <div className="relative w-16 h-16 mx-auto rounded-full overflow-hidden ring-2 ring-accent-blue/40 shadow-lg">
-              <Image
-                src="/logo.jpg"
-                alt="Logo THPT Vĩnh Thuận"
-                fill
-                className="object-cover"
-                sizes="64px"
+      <div className="relative z-10 w-full max-w-sm">
+        {/* Logo */}
+        <div className="mb-8 flex flex-col items-center gap-3 text-center">
+          <span className="relative block h-16 w-16 overflow-hidden rounded-2xl ring-1 ring-line-strong">
+            <Image
+              src="/logo.jpg"
+              alt="Logo THPT Vĩnh Thuận"
+              fill
+              className="object-cover"
+              sizes="64px"
+            />
+          </span>
+          <div>
+            <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+              The Archives
+            </h1>
+            <p className="mt-1 text-[13px] text-ink-3">
+              Đăng nhập để quản lý kho tư liệu
+            </p>
+          </div>
+        </div>
+
+        {/* Form */}
+        <form
+          onSubmit={handleLogin}
+          className="space-y-4 rounded-3xl border border-line bg-bg p-7 shadow-[0_24px_64px_-24px_rgba(16,36,62,0.25)] backdrop-blur-xl md:p-8 dark:shadow-[0_24px_64px_-24px_rgba(0,0,0,0.7)]"
+        >
+          {error && (
+            <div className="rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-[13px] leading-relaxed text-danger">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label htmlFor="email" className="text-[13px] font-medium text-ink-2">
+              Email
+            </label>
+            <div className="relative">
+              <EnvelopeSimple
+                size={16}
+                className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-ink-3"
+              />
+              <input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="ten@thptvinhthuan.edu.vn"
+                autoComplete="email"
+                className="w-full rounded-xl border border-line bg-surface py-2.5 pr-4 pl-10 text-sm text-ink transition-[border-color] duration-200 placeholder:text-ink-3 hover:border-line-strong focus:border-accent focus:outline-none"
               />
             </div>
-            <div>
-              <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-accent-gold font-semibold">
-                ĐOÀN TRƯỜNG THPT VĨNH THUẬN
-              </span>
-              <h1 className="text-2xl font-semibold text-text-primary tracking-tight mt-1">
-                Cổng Quản Trị Media
-              </h1>
-              <p className="text-xs text-text-muted mt-1">
-                Dành riêng cho Ban Quản trị & CLB Truyền Thông
-              </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="password" className="text-[13px] font-medium text-ink-2">
+              Mật khẩu
+            </label>
+            <div className="relative">
+              <Lock
+                size={16}
+                className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-ink-3"
+              />
+              <input
+                id="password"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Nhập mật khẩu"
+                autoComplete="current-password"
+                className="w-full rounded-xl border border-line bg-surface py-2.5 pr-4 pl-10 text-sm text-ink transition-[border-color] duration-200 placeholder:text-ink-3 hover:border-line-strong focus:border-accent focus:outline-none"
+              />
             </div>
           </div>
 
-          {/* Form */}
-          <form onSubmit={handleLogin} className="mt-8 space-y-4">
-            {error && (
-              <div className="p-3.5 rounded-2xl bg-accent-red/10 border border-accent-red/30 text-xs text-accent-red">
-                {error}
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <label className="text-xs text-text-secondary font-medium">
-                Email quản trị viên
-              </label>
-              <div className="relative flex items-center">
-                <EnvelopeSimple
-                  size={16}
-                  weight="light"
-                  className="absolute left-3.5 text-text-muted pointer-events-none"
-                />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@thptvinhthuan.edu.vn"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-bg-secondary border border-border-subtle hover:border-border-hover focus:border-accent-blue focus:outline-none text-sm text-text-primary placeholder:text-text-muted transition-all duration-200"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs text-text-secondary font-medium">
-                Mật khẩu
-              </label>
-              <div className="relative flex items-center">
-                <Lock
-                  size={16}
-                  weight="light"
-                  className="absolute left-3.5 text-text-muted pointer-events-none"
-                />
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-bg-secondary border border-border-subtle hover:border-border-hover focus:border-accent-blue focus:outline-none text-sm text-text-primary placeholder:text-text-muted transition-all duration-200"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-2 flex items-center justify-center gap-2 py-3 rounded-full bg-accent-red hover:bg-accent-red-hover text-white text-sm font-semibold transition-all duration-200 active:scale-[0.98] shadow-lg shadow-accent-red/25 disabled:opacity-50"
-            >
-              <span>{loading ? "Đang xác thực..." : "Đăng nhập hệ thống"}</span>
-              <ArrowRight size={16} weight="bold" />
-            </button>
-          </form>
-
-          {/* Security note */}
-          <div className="mt-6 pt-6 border-t border-border-subtle flex items-center justify-center gap-1.5 text-[11px] text-text-muted">
-            <ShieldCheck size={14} weight="fill" className="text-accent-blue" />
-            <span>Xác thực an toàn qua Supabase Auth</span>
-          </div>
-        </div>
-
-        {/* Back to website */}
-        <div className="text-center mt-6">
-          <a
-            href="/"
-            className="text-xs text-text-muted hover:text-text-primary transition-colors duration-200"
+          <button
+            type="submit"
+            disabled={loading}
+            className="group mt-1 flex w-full items-center justify-center gap-2 rounded-full bg-accent py-3 text-sm font-semibold text-white transition-[background-color,transform] duration-300 hover:bg-accent-hover active:scale-[0.98] disabled:opacity-50"
           >
-            ← Quay lại trang chủ The Archives
-          </a>
-        </div>
+            {loading ? "Đang xác thực..." : "Đăng nhập"}
+            {!loading && (
+              <ArrowRight
+                size={15}
+                weight="bold"
+                className="transition-transform duration-300 group-hover:translate-x-0.5"
+              />
+            )}
+          </button>
+        </form>
+
+        <p className="mt-6 text-center text-[12px] leading-relaxed text-ink-3">
+          Tài khoản dành riêng cho Ban Quản trị & CLB Truyền Thông.
+        </p>
       </div>
     </div>
   );

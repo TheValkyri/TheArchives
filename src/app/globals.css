@@ -1,52 +1,234 @@
 @import "tailwindcss";
 
-@theme {
-  --color-bg-primary: #060b13;
-  --color-bg-secondary: #0a1322;
-  --color-bg-card: #0f1c30;
-  --color-bg-card-hover: #162640;
-  --color-accent-blue: #2563eb;
-  --color-accent-blue-hover: #3b82f6;
-  --color-accent-red: #dc2626;
-  --color-accent-red-hover: #ef4444;
-  --color-accent-gold: #f59e0b;
-  --color-accent-gold-hover: #fbbf24;
-  --color-text-primary: #f8fafc;
-  --color-text-secondary: #94a3b8;
-  --color-text-muted: #64748b;
-  --color-border-subtle: #1e293b;
-  --color-border-hover: #334155;
-  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'Geist Mono', ui-monospace, monospace;
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---- Light (mặc định): Trắng + Xanh Đoàn — hòa bình ---- */
+:root {
+  --bg: #ffffff;
+  --surface: #f4f7fb;
+  --surface-2: #e9eef6;
+  --line: #e3e9f2;
+  --line-strong: #c7d3e0;
+  --ink: #10243e;
+  --ink-2: #3f5877;
+  --ink-3: #6b8099;
+  --accent: #0f6ade;
+  --accent-hover: #0b57c0;
+  --accent-soft: #0f6ade1a;
+  --danger: #dc2626;
+  --danger-hover: #ef4444;
+  --danger-soft: #dc26261a;
+  --success: #059669;
+  --success-soft: #0596691a;
+  --warning: #b45309;
+  --warning-soft: #b453091a;
+  --font-display: "Outfit", "Geist", ui-sans-serif, system-ui, sans-serif;
+  color-scheme: light;
+}
+
+/* ---- Dark: nền đêm xanh sâu ---- */
+.dark {
+  --bg: #090c12;
+  --surface: #0f141c;
+  --surface-2: #161d27;
+  --line: #232c3a;
+  --line-strong: #3a4757;
+  --ink: #e6ebf2;
+  --ink-2: #a3b1c2;
+  --ink-3: #6d7c8e;
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-soft: #3b82f61a;
+  --danger: #f13444;
+  --danger-hover: #f3505e;
+  --danger-soft: #f134441a;
+  --success: #34d399;
+  --success-soft: #34d3991a;
+  --warning: #fbbf24;
+  --warning-soft: #fbbf241a;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-danger-soft: var(--danger-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
 }
 
 html {
+  background-color: var(--bg);
+  color: var(--ink);
+  /* Smooth scroll cho anchor link — tôn trọng reduced-motion ở block cuối file */
   scroll-behavior: smooth;
-  background-color: var(--color-bg-primary);
-  color: var(--color-text-primary);
 }
 
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
-  background: radial-gradient(circle at 50% 0%, rgba(37, 99, 235, 0.08) 0%, transparent 50%),
-              radial-gradient(circle at 10% 20%, rgba(220, 38, 38, 0.05) 0%, transparent 40%),
-              var(--color-bg-primary);
-  min-height: 100vh;
+  min-height: 100dvh;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.font-display {
+  font-family: var(--font-display);
 }
 
 ::selection {
-  background-color: var(--color-accent-red);
-  color: white;
+  background-color: var(--accent);
+  color: #fff;
 }
 
+/* Chuyển theme mượt khi toggle */
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition-property: background-color, border-color, color, fill, stroke,
+    box-shadow !important;
+  transition-duration: 0.3s !important;
+  transition-timing-function: ease !important;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+video::-webkit-media-controls-panel {
+  background-image: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+}
+
+/* ---- Ambient: quầng sáng xanh dịu đầu trang ---- */
+.ambient-sky {
+  background:
+    radial-gradient(52rem 30rem at 50% -12%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%),
+    radial-gradient(40rem 24rem at 88% 8%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 62%);
+}
+
+/* ---- Mây trôi ---- */
+@keyframes cloud-drift {
+  from { transform: translateX(-32vw); }
+  to   { transform: translateX(118vw); }
+}
+.cloud-drift { animation: cloud-drift var(--cloud-dur, 110s) linear infinite; will-change: transform; }
+
+/* ---- Hạt bụi ánh sáng ---- */
+@keyframes dust-float {
+  0%, 100% { transform: translate(0, 0); opacity: var(--dust-o, 0.45); }
+  50%      { transform: translate(7px, -14px); opacity: calc(var(--dust-o, 0.45) + 0.3); }
+}
+.dust-float { animation: dust-float var(--dust-dur, 9s) ease-in-out infinite; will-change: transform, opacity; }
+
+/* ---- Lông vũ trôi — rơi lượn + xoay nhẹ ---- */
+@keyframes feather-fall {
+  0%   { transform: translate(0, -6vh) rotate(0deg); }
+  25%  { transform: translate(3.5vw, 22vh) rotate(70deg); }
+  50%  { transform: translate(-2vw, 48vh) rotate(140deg); }
+  75%  { transform: translate(2.5vw, 74vh) rotate(210deg); }
+  100% { transform: translate(-1vw, 106vh) rotate(300deg); }
+}
+.feather-fall {
+  animation: feather-fall var(--feather-dur, 30s) linear infinite;
+  will-change: transform;
+}
+
+/* ---- Sao lấp lánh — chỉ dark mode ---- */
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.08; transform: scale(0.8); }
+  50%      { opacity: 0.55; transform: scale(1.15); }
+}
+.star-twinkle {
+  animation: star-twinkle var(--star-dur, 4.5s) ease-in-out infinite;
+  will-change: opacity, transform;
+}
+.stars-layer { display: none; }
+:root:not(.dark) .stars-layer { display: none; }
+.dark .stars-layer { display: block; }
+
+/* ---- Luồng gió — đường cong mảnh trôi ngang ---- */
+@keyframes gust-drift {
+  from { transform: translateX(-30vw) scaleX(var(--gust-scale, 1)); opacity: 0; }
+  12%  { opacity: var(--gust-o, 0.06); }
+  88%  { opacity: var(--gust-o, 0.06); }
+  to   { transform: translateX(115vw) scaleX(var(--gust-scale, 1)); opacity: 0; }
+}
+.gust-drift {
+  animation: gust-drift var(--gust-dur, 50s) linear infinite;
+  will-change: transform, opacity;
+}
+
+/* ---- Quầng sáng thở — ambient dịch chuyển cực chậm ---- */
+@keyframes glow-breathe {
+  0%   { transform: translate(0, 0) scale(1); opacity: 0.7; }
+  50%  { transform: translate(4%, -3%) scale(1.08); opacity: 1; }
+  100% { transform: translate(0, 0) scale(1); opacity: 0.7; }
+}
+.glow-breathe {
+  inset: -10%;
+  animation: glow-breathe 72s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* ---- Marquee vô hạn ---- */
+@keyframes marquee-x {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.marquee-track {
+  animation: marquee-x var(--marquee-duration, 30s) linear infinite;
+  will-change: transform;
+}
+.marquee-mask {
+  mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+}
+
+/* ---- Icon toggle theme ---- */
+@keyframes icon-in {
+  0%   { transform: rotate(-90deg) scale(0.6); opacity: 0; }
+  100% { transform: rotate(0deg) scale(1); opacity: 1; }
+}
+.toggle-icon-in { animation: icon-in 0.3s ease-out; }
+
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  .cloud-drift,
+  .dust-float,
+  .feather-fall,
+  .star-twinkle,
+  .gust-drift,
+  .glow-breathe,
+  .marquee-track {
+    animation: none !important;
+    transition: none !important;
+  }
+  .stars-layer { display: none !important; }
 }

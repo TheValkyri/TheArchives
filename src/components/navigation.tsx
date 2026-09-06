@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { motion, AnimatePresence, useReducedMotion } from "motion/react";
-import { List, X, MagnifyingGlass } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
+import { List, X, SignIn } from "@phosphor-icons/react";
+import { ThemeToggle } from "./theme-toggle";
 
 const navLinks = [
   { label: "Thư viện", href: "#gallery" },
@@ -11,119 +11,176 @@ const navLinks = [
   { label: "Về CLB", href: "#about" },
 ];
 
+/* Smooth scroll có easing (easeInOutCubic) — mượt hơn scroll-behavior:smooth */
+function smoothScrollTo(targetY: number, duration = 650) {
+  const startY = window.scrollY;
+  const distance = targetY - startY;
+
+  // Khoảng cách nhỏ hoặc đã ở đúng chỗ → không cần animation
+  if (Math.abs(distance) < 4) {
+    window.scrollTo(0, targetY);
+    return;
+  }
+
+  const startTime = performance.now();
+
+  const step = (now: number) => {
+    const t = Math.min((now - startTime) / duration, 1);
+    // easeInOutCubic: chậm → nhanh → chậm
+    const eased =
+      t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    window.scrollTo(0, startY + distance * eased);
+    if (t < 1) requestAnimationFrame(step);
+  };
+
+  requestAnimationFrame(step);
+}
+
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
-  const reduce = useReducedMotion();
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  /* Anchor click → smooth scroll JS (fallback CSS đã có ở globals.css) */
+  useEffect(() => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return; // để CSS scroll-behavior: auto xử lý (nhảy tức thì)
+
+    const onClick = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="#"]');
+      if (!anchor) return;
+
+      const href = anchor.getAttribute("href");
+      if (!href || href === "#") return;
+
+      const el = document.querySelector(href);
+      if (!el) return;
+
+      e.preventDefault();
+      setIsOpen(false);
+      history.pushState(null, "", href);
+
+      const y = el.getBoundingClientRect().top + window.scrollY - 72; // chừa navbar
+      smoothScrollTo(Math.max(0, y));
+    };
+
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.style.overflow = isOpen ? "hidden" : "";
+    return () => {
+      document.documentElement.style.overflow = "";
+    };
+  }, [isOpen]);
 
   return (
     <>
-      <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-4xl">
-        <div className="relative rounded-full border border-border-subtle bg-bg-primary/80 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
-          <div className="flex items-center justify-between px-4 py-2.5 md:px-6">
-            <a href="#" className="flex items-center gap-3 group">
-              <div className="relative w-8 h-8 rounded-full overflow-hidden ring-1 ring-accent-blue/30 shadow-sm">
-                <Image
-                  src="/logo.jpg"
-                  alt="Logo THPT Vĩnh Thuận"
-                  fill
-                  className="object-cover"
-                  sizes="32px"
-                />
-              </div>
-              <div className="flex flex-col">
-                <span className="font-mono text-xs uppercase tracking-[0.14em] text-text-primary group-hover:text-accent-blue transition-colors duration-200">
-                  The Archives
-                </span>
-                <span className="text-[10px] text-text-muted hidden sm:inline">
-                  Đoàn Trường THPT Vĩnh Thuận
-                </span>
-              </div>
-            </a>
-
-            <div className="hidden md:flex items-center gap-7">
-              {navLinks.map((link) => (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  className="text-sm text-text-secondary hover:text-text-primary transition-colors duration-200"
-                >
-                  {link.label}
-                </a>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <a
-                href="#gallery"
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-text-secondary hover:text-text-primary bg-white/5 hover:bg-white/10 border border-border-subtle transition-all duration-200"
-                title="Tìm kiếm tư liệu"
-              >
-                <MagnifyingGlass size={14} weight="light" className="text-accent-blue" />
-                <span>Tìm kiếm</span>
-              </a>
-
-              <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="md:hidden flex items-center justify-center w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 text-text-primary transition-colors duration-200"
-                aria-label={isOpen ? "Đóng menu" : "Mở menu"}
-              >
-                {isOpen ? (
-                  <X size={18} weight="light" />
-                ) : (
-                  <List size={18} weight="light" />
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={reduce ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="fixed inset-0 z-40 bg-bg-primary/95 backdrop-blur-3xl flex flex-col items-center justify-center gap-8"
+      {/* Floating glass pill — nổi trên cùng, thu nhỏ khi scroll */}
+      <header
+        className={`fixed inset-x-0 top-0 z-50 flex justify-center px-4 pt-4 transition-[transform] duration-500 ${
+          scrolled ? "translate-y-0" : ""
+        }`}
+      >
+        <nav
+          className={`flex w-full max-w-2xl items-center justify-between gap-2 rounded-full border px-3 py-2 transition-[background-color,border-color,box-shadow] duration-500 md:pl-4 ${
+            scrolled || isOpen
+              ? "border-line bg-bg/85 shadow-[0_8px_32px_-12px_rgba(16,36,62,0.18)] backdrop-blur-2xl dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)]"
+              : "border-transparent bg-bg/60 backdrop-blur-xl"
+          }`}
+        >
+          <a
+            href="#"
+            className="flex items-center gap-2.5"
+            aria-label="The Archives — trang chủ"
           >
-            {navLinks.map((link, i) => (
-              <motion.a
+            <span className="relative block h-8 w-8 overflow-hidden rounded-full ring-1 ring-line-strong">
+              <Image
+                src="/logo.jpg"
+                alt="Logo THPT Vĩnh Thuận"
+                fill
+                className="object-cover"
+                sizes="32px"
+              />
+            </span>
+            <span className="flex flex-col leading-none">
+              <span className="text-[13px] font-semibold tracking-tight text-ink">
+                The Archives
+              </span>
+              <span className="mt-0.5 hidden text-[9.5px] text-ink-3 sm:block">
+                Đoàn Trường THPT Vĩnh Thuận
+              </span>
+            </span>
+          </a>
+
+          <div className="hidden items-center gap-0.5 md:flex">
+            {navLinks.map((link) => (
+              <a
                 key={link.href}
                 href={link.href}
-                onClick={() => setIsOpen(false)}
-                initial={reduce ? false : { opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 12 }}
-                transition={{
-                  duration: 0.4,
-                  delay: i * 0.08,
-                  ease: [0.16, 1, 0.3, 1],
-                }}
-                className="text-3xl font-light text-text-primary hover:text-accent-red transition-colors duration-200"
+                className="rounded-full px-3.5 py-2 text-[13px] text-ink-2 transition-colors duration-200 hover:bg-surface-2 hover:text-ink"
               >
                 {link.label}
-              </motion.a>
+              </a>
             ))}
+          </div>
 
-            <motion.a
-              href="#gallery"
-              onClick={() => setIsOpen(false)}
-              initial={reduce ? false : { opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 12 }}
-              transition={{
-                duration: 0.4,
-                delay: 0.3,
-                ease: [0.16, 1, 0.3, 1],
-              }}
-              className="mt-4 px-6 py-2.5 rounded-full bg-accent-red text-white text-sm font-semibold"
+          <div className="flex items-center gap-1.5">
+            <ThemeToggle className="!h-8 !w-8" />
+            <a
+              href="/admin/login"
+              className="hidden items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-[12.5px] font-semibold text-white transition-[background-color,transform] duration-200 hover:bg-accent-hover active:scale-[0.97] sm:flex"
             >
-              Mở Thư viện tư liệu
-            </motion.a>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <SignIn size={14} weight="bold" />
+              Đăng nhập
+            </a>
+            <button
+              onClick={() => setIsOpen((v) => !v)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-ink transition-colors duration-200 hover:bg-line md:hidden"
+              aria-label={isOpen ? "Đóng menu" : "Mở menu"}
+              aria-expanded={isOpen}
+            >
+              {isOpen ? <X size={17} /> : <List size={17} />}
+            </button>
+          </div>
+        </nav>
+      </header>
+
+      {/* Mobile menu — panel trượt xuống */}
+      <div
+        className={`fixed inset-x-0 top-20 z-40 origin-top border-b border-line bg-bg/95 backdrop-blur-2xl transition-[opacity,transform] duration-300 ease-out md:hidden ${
+          isOpen
+            ? "pointer-events-auto translate-y-0 opacity-100"
+            : "pointer-events-none -translate-y-2 opacity-0"
+        }`}
+      >
+        <div className="space-y-1 px-4 py-4">
+          {navLinks.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              onClick={() => setIsOpen(false)}
+              className="block rounded-xl px-4 py-3 text-base font-medium text-ink transition-colors duration-200 hover:bg-surface-2"
+            >
+              {link.label}
+            </a>
+          ))}
+          <a
+            href="/admin/login"
+            className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white"
+          >
+            <SignIn size={15} weight="bold" />
+            Đăng nhập trang quản trị
+          </a>
+        </div>
+      </div>
     </>
   );
 }

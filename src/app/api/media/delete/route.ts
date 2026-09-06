@@ -1,10 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, isS3Configured } from "@/lib/s3";
-import { supabaseAdmin, supabase, isSupabaseConfigured } from "@/lib/supabase";
+import { supabaseAdmin, supabase } from "@/lib/supabase";
+import { requireAdmin } from "@/lib/auth-guard";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
+    // Chặn request chưa đăng nhập — không thể xóa tư liệu trái phép
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
+
     const { id, src } = await req.json();
 
     if (!id) {

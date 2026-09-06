@@ -1,55 +1,47 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { MagnifyingGlass, Funnel, ArrowCounterClockwise, UploadSimple } from "@phosphor-icons/react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  MagnifyingGlass,
+  X,
+  ArrowCounterClockwise,
+  Images,
+  CaretDown,
+} from "@phosphor-icons/react";
 import { FilterPills } from "./filter-pills";
 import { GalleryCard } from "./gallery-card";
 import { MediaLightbox } from "./media-lightbox";
 import { mediaItems, schoolYears, getLiveMediaItems, type MediaItem } from "@/lib/data";
+
+const PAGE_SIZE = 24;
+const SORT_OPTIONS = [
+  { value: "newest", label: "Mới nhất" },
+  { value: "oldest", label: "Cũ nhất" },
+] as const;
+
+type SortOrder = (typeof SORT_OPTIONS)[number]["value"];
 
 export function GalleryGrid() {
   const [items, setItems] = useState<MediaItem[]>(mediaItems);
   const [activeCategory, setActiveCategory] = useState("Tất cả");
   const [selectedYear, setSelectedYear] = useState<string>("Tất cả năm");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [activeItem, setActiveItem] = useState<MediaItem | null>(null);
 
-  // Fetch dynamic items from Supabase with realtime tab sync
-  const refreshMedia = () => {
-    getLiveMediaItems().then((live) => {
-      if (live) {
-        setItems(live);
-      }
-    });
-  };
-
   useEffect(() => {
-    refreshMedia();
-
-    const handleStorage = () => refreshMedia();
-    const handleVisibility = () => {
-      if (!document.hidden) refreshMedia();
-    };
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener("focus", handleVisibility);
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener("focus", handleVisibility);
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
+    getLiveMediaItems().then((live) => {
+      if (live) setItems(live);
+    });
   }, []);
 
   const filteredItems = useMemo(() => {
-    return items.filter((item) => {
+    const filtered = items.filter((item) => {
       const matchCategory =
         activeCategory === "Tất cả" || item.category === activeCategory;
-
       const matchYear =
         selectedYear === "Tất cả năm" || item.schoolYear === selectedYear;
-
       const query = searchQuery.trim().toLowerCase();
       const matchSearch =
         query === "" ||
@@ -57,10 +49,19 @@ export function GalleryGrid() {
         item.album.toLowerCase().includes(query) ||
         item.photographer.toLowerCase().includes(query) ||
         item.tags.some((tag) => tag.toLowerCase().includes(query));
-
       return matchCategory && matchYear && matchSearch;
     });
-  }, [items, activeCategory, selectedYear, searchQuery]);
+
+    // getLiveMediaItems đã sort created_at desc → "Mới nhất" giữ nguyên,
+    // "Cũ nhất" đảo chiều
+    return sortOrder === "oldest" ? [...filtered].reverse() : filtered;
+  }, [items, activeCategory, selectedYear, searchQuery, sortOrder]);
+
+  const visibleItems = useMemo(
+    () => filteredItems.slice(0, visibleCount),
+    [filteredItems, visibleCount]
+  );
+  const remainingCount = filteredItems.length - visibleItems.length;
 
   const hasActiveFilters =
     activeCategory !== "Tất cả" ||
@@ -71,71 +72,101 @@ export function GalleryGrid() {
     setActiveCategory("Tất cả");
     setSelectedYear("Tất cả năm");
     setSearchQuery("");
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  // Đổi filter/search → quay lại trang đầu
+  const changeCategory = (cat: string) => {
+    setActiveCategory(cat);
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  const changeYear = (year: string) => {
+    setSelectedYear(year);
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  const changeSearch = (q: string) => {
+    setSearchQuery(q);
+    setVisibleCount(PAGE_SIZE);
   };
 
   return (
-    <section id="gallery" className="py-24 md:py-32 relative">
-      <div className="max-w-[1400px] mx-auto px-4 md:px-8">
-        {/* Section Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-border-subtle">
+    <section id="gallery" className="scroll-mt-20 py-20 md:py-28">
+      <div className="mx-auto max-w-6xl px-4 md:px-6">
+        {/* Header */}
+        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div>
-            <span className="text-xs font-mono uppercase tracking-[0.2em] text-accent-blue font-semibold">
-              KHO TƯ LIỆU TRUYỀN THÔNG
-            </span>
-            <h2 className="text-3xl md:text-5xl tracking-tighter font-semibold text-text-primary mt-2">
+            <p className="text-xs font-medium tracking-widest text-accent uppercase">
+              Kho tư liệu truyền thông
+            </p>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-ink md:text-4xl">
               Thư viện ảnh & video
             </h2>
-            <p className="mt-3 text-text-secondary text-base max-w-[55ch]">
-              Ghi lại trọn vẹn những cột mốc, sự kiện và khoảnh khắc đáng nhớ của thầy và trò THPT Vĩnh Thuận.
+            <p className="mt-3 max-w-[52ch] text-[15px] text-ink-2">
+              Ghi lại trọn vẹn những cột mốc, sự kiện và khoảnh khắc đáng nhớ
+              của thầy và trò THPT Vĩnh Thuận.
             </p>
           </div>
 
-          {/* Search Bar */}
-          <div className="relative w-full md:w-80">
-            <div className="relative flex items-center">
-              <MagnifyingGlass
-                size={18}
-                weight="light"
-                className="absolute left-3.5 text-text-muted pointer-events-none"
-              />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Tìm sự kiện, tác giả, tag..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-full bg-bg-card border border-border-subtle hover:border-border-hover focus:border-accent-blue focus:outline-none text-sm text-text-primary placeholder:text-text-muted transition-all duration-200"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-3 text-xs text-text-muted hover:text-text-primary px-1.5 py-0.5 rounded bg-white/5"
-                  aria-label="Xóa tìm kiếm"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
+          {/* Search */}
+          <div className="relative w-full md:w-72">
+            <MagnifyingGlass
+              size={16}
+              className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-ink-3"
+            />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => changeSearch(e.target.value)}
+              placeholder="Tìm sự kiện, tác giả, tag..."
+              className="w-full rounded-full border border-line bg-surface py-2.5 pr-9 pl-10 text-sm text-ink transition-[border-color] duration-200 placeholder:text-ink-3 hover:border-line-strong focus:border-line-strong focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => changeSearch("")}
+                className="absolute top-1/2 right-2.5 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+                aria-label="Xóa tìm kiếm"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Filter Controls Bar */}
-        <div className="mt-8 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="overflow-x-auto pb-2 lg:pb-0 scrollbar-none">
-            <FilterPills active={activeCategory} onChange={setActiveCategory} />
-          </div>
+        {/* Filters */}
+        <div className="mt-8 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <FilterPills active={activeCategory} onChange={changeCategory} />
 
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="flex items-center gap-2 text-xs text-text-muted">
-              <Funnel size={14} weight="light" />
-              <span>Năm học:</span>
+          <div className="flex shrink-0 flex-wrap items-center gap-2.5">
+            {/* Sắp xếp */}
+            <div className="relative">
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+                className="cursor-pointer appearance-none rounded-full border border-line bg-surface py-2 pr-8 pl-3.5 text-[13px] text-ink transition-colors duration-200 hover:border-line-strong focus:outline-none"
+                aria-label="Sắp xếp tư liệu"
+              >
+                {SORT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <CaretDown
+                size={12}
+                className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-ink-3"
+              />
             </div>
+
             <select
               value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              className="px-3 py-2 rounded-full bg-bg-card border border-border-subtle hover:border-border-hover text-xs text-text-primary focus:outline-none focus:border-accent-blue transition-colors cursor-pointer"
+              onChange={(e) => changeYear(e.target.value)}
+              className="cursor-pointer rounded-full border border-line bg-surface px-3.5 py-2 text-[13px] text-ink transition-colors duration-200 hover:border-line-strong focus:outline-none"
+              aria-label="Lọc theo năm học"
             >
               {schoolYears.map((year) => (
-                <option key={year} value={year} className="bg-bg-card">
+                <option key={year} value={year}>
                   {year}
                 </option>
               ))}
@@ -144,35 +175,31 @@ export function GalleryGrid() {
             {hasActiveFilters && (
               <button
                 onClick={resetFilters}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs text-accent-red hover:bg-accent-red/10 border border-accent-red/20 transition-all duration-200"
+                className="flex items-center gap-1.5 rounded-full border border-line px-3.5 py-2 text-[13px] text-ink-2 transition-colors duration-200 hover:border-line-strong hover:text-ink"
                 title="Đặt lại bộ lọc"
               >
-                <ArrowCounterClockwise size={13} weight="bold" />
+                <ArrowCounterClockwise size={13} />
                 <span className="hidden sm:inline">Đặt lại</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Result Meta Strip */}
-        <div className="mt-4 flex items-center justify-between text-xs text-text-muted">
-          <span>
-            Hiển thị <strong className="text-text-primary font-mono">{filteredItems.length}</strong> trong số{" "}
-            <span className="font-mono">{items.length}</span> tư liệu
-          </span>
-          {searchQuery && (
-            <span className="text-accent-gold">
-              Kết quả cho &ldquo;{searchQuery}&rdquo;
-            </span>
-          )}
-        </div>
+        {/* Result count */}
+        <p className="mt-5 text-[13px] text-ink-3">
+          Hiển thị{" "}
+          <span className="font-medium text-ink tabular-nums">
+            {filteredItems.length}
+          </span>{" "}
+          trong số <span className="tabular-nums">{items.length}</span> tư liệu
+        </p>
 
-        {/* Bento Masonry Grid */}
+        {/* Grid — phân trang bằng Tải thêm */}
         <div
-          className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 auto-rows-auto"
+          className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
           style={{ gridAutoFlow: "dense" }}
         >
-          {filteredItems.map((item, i) => (
+          {visibleItems.map((item, i) => (
             <GalleryCard
               key={item.id}
               item={item}
@@ -181,46 +208,61 @@ export function GalleryGrid() {
             />
           ))}
 
-          {/* Empty State */}
+          {/* Nút Tải thêm */}
+          {remainingCount > 0 && (
+            <div className="col-span-full mt-4 flex justify-center">
+              <button
+                onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                className="flex items-center gap-2 rounded-full border border-line bg-surface px-6 py-3 text-sm font-semibold text-ink transition-[background-color,border-color,transform] duration-200 hover:border-line-strong hover:bg-surface-2 active:scale-[0.98]"
+              >
+                Tải thêm
+                <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[12px] font-medium text-accent tabular-nums">
+                  +{remainingCount.toLocaleString("vi-VN")}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* Đã tải hết — chỉ báo khi có nhiều mục */}
+          {remainingCount === 0 && filteredItems.length > PAGE_SIZE && (
+            <p className="col-span-full mt-2 text-center text-[13px] text-ink-3">
+              Bạn đã xem hết {filteredItems.length.toLocaleString("vi-VN")} tư liệu
+              trong bộ lọc hiện tại.
+            </p>
+          )}
+
+          {/* Empty states */}
           {filteredItems.length === 0 && (
-            <div className="col-span-full py-24 text-center rounded-3xl bg-bg-card/40 border border-dashed border-border-subtle p-8 space-y-4">
-              <div className="w-14 h-14 rounded-full bg-white/5 mx-auto flex items-center justify-center text-text-muted">
+            <div className="col-span-full flex flex-col items-center gap-4 rounded-2xl border border-line bg-surface/60 px-8 py-20 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-2 text-ink-3">
                 {items.length === 0 ? (
-                  <UploadSimple size={28} weight="light" className="text-accent-blue" />
+                  <Images size={22} />
                 ) : (
-                  <MagnifyingGlass size={28} weight="light" />
+                  <MagnifyingGlass size={22} />
                 )}
               </div>
 
               {items.length === 0 ? (
-                <div className="space-y-2">
-                  <h3 className="text-lg font-medium text-text-primary">
-                    Kho tư liệu đang chờ cập nhật ảnh thật
+                <div className="space-y-1.5">
+                  <h3 className="font-medium text-ink">
+                    Kho tư liệu đang chờ khoảnh khắc đầu tiên
                   </h3>
-                  <p className="text-xs text-text-muted max-w-md mx-auto leading-relaxed">
-                    Dữ liệu mẫu đã được làm sạch hoàn toàn. Ban Quản trị hãy đăng nhập vào Cổng Quản Trị để tải lên những bộ ảnh sự kiện đầu tiên lên kho S3 PIKAMC.
+                  <p className="mx-auto max-w-md text-[13px] leading-relaxed text-ink-3">
+                    Đội ngũ tác nghiệp đang ghi hình các sự kiện. Vậy lại
+                    sau nhé — thư viện sẽ sớm đầy ắp hình ảnh.
                   </p>
-                  <div className="pt-3">
-                    <a
-                      href="/admin"
-                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-accent-red hover:bg-accent-red-hover text-white text-xs font-semibold shadow-lg shadow-accent-red/25 transition-all duration-200"
-                    >
-                      <UploadSimple size={15} weight="bold" />
-                      <span>Vào Cổng Quản Trị để tải ảnh</span>
-                    </a>
-                  </div>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <h3 className="text-lg font-medium text-text-primary">
-                    Không tìm thấy ảnh hoặc video phù hợp
+                <div className="space-y-1.5">
+                  <h3 className="font-medium text-ink">
+                    Không tìm thấy tư liệu phù hợp
                   </h3>
-                  <p className="text-xs text-text-muted max-w-sm mx-auto">
-                    Thử thay đổi từ khóa tìm kiếm hoặc bấm nút đặt lại các bộ lọc.
+                  <p className="mx-auto max-w-sm text-[13px] text-ink-3">
+                    Thử thay đổi từ khóa hoặc đặt lại các bộ lọc.
                   </p>
                   <button
                     onClick={resetFilters}
-                    className="mt-4 px-5 py-2.5 rounded-full text-xs font-semibold bg-accent-blue hover:bg-accent-blue-hover text-white transition-all duration-200"
+                    className="mt-4 rounded-full bg-surface-2 px-5 py-2.5 text-[13px] font-semibold text-ink transition-colors duration-200 hover:bg-line"
                   >
                     Xóa tất cả bộ lọc
                   </button>
@@ -231,7 +273,6 @@ export function GalleryGrid() {
         </div>
       </div>
 
-      {/* Lightbox Viewer Modal */}
       <MediaLightbox
         item={activeItem}
         items={filteredItems}

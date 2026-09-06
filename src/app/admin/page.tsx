@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
@@ -9,20 +9,24 @@ import {
   SignOut,
   CheckCircle,
   Warning,
-  Plus,
   Trash,
   Tag,
-  CalendarBlank,
   User,
   LinkSimple,
   Globe,
   ArrowsClockwise,
   Images,
   MagnifyingGlass,
+  X,
+  PencilSimple,
+  ChartPie,
 } from "@phosphor-icons/react";
-import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+import { supabase, isSupabaseConfigured, authedFetch } from "@/lib/supabase";
 import { isS3Configured } from "@/lib/s3";
-import { categories, schoolYears } from "@/lib/data";
+import { categories, getLiveAlbums, type Album } from "@/lib/data";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { EditAlbumModal } from "@/components/edit-album-modal";
+import { SchoolYearInput } from "@/components/school-year-input";
 
 interface UploadQueueItem {
   file: File;
@@ -38,51 +42,75 @@ interface UploadQueueItem {
   errorMessage?: string;
 }
 
+type Tab = "overview" | "upload" | "manage" | "album" | "manageAlbum" | "status";
+
+const inputCls =
+  "w-full rounded-xl border border-line bg-bg px-3.5 py-2.5 text-[13px] text-ink transition-[border-color] duration-200 placeholder:text-ink-3 hover:border-line-strong focus:border-line-strong focus:outline-none";
+
+const selectCls =
+  "w-full cursor-pointer rounded-xl border border-line bg-bg px-3.5 py-2.5 text-[13px] text-ink transition-colors duration-200 hover:border-line-strong focus:border-line-strong focus:outline-none";
+
+/* BÃ¡o cho trang chá»§ biáº¿t dá»¯ liá»‡u Ä‘Ã£ Ä‘á»•i (module scope â€” Date.now an toÃ n vÃ¬
+   chá»‰ cháº¡y trong event handler, khÃ´ng pháº£i lÃºc render) */
+function notifySync() {
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem("the_archives_updated_at", Date.now().toString());
+      window.dispatchEvent(new Event("storage"));
+    } catch {}
+  }
+};
+
 export default function AdminDashboardPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [activeTab, setActiveTab] = useState<"upload" | "manage" | "album" | "status">("upload");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Manage media state
-  const [existingMedia, setExistingMedia] = useState<any[]>([]);
+  // Manage state
+  const [existingMedia, setExistingMedia] = useState<Record<string, unknown>[]>(
+    []
+  );
   const [loadingExisting, setLoadingExisting] = useState(false);
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
   const [manageSearch, setManageSearch] = useState("");
 
+  // Album manage state
+  const [adminAlbums, setAdminAlbums] = useState<Album[]>([]);
+  const [loadingAlbums, setLoadingAlbums] = useState(false);
+  const [editingAlbum, setEditingAlbum] = useState<Album | null>(null);
+
   // Upload state
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
-  const [globalCategory, setGlobalCategory] = useState<string>("Hoạt động Đoàn");
-  const [globalYear, setGlobalYear] = useState<string>("2024 - 2025");
-  const [globalPhotographer, setGlobalPhotographer] = useState<string>("CLB Truyền Thông");
-  const [globalTags, setGlobalTags] = useState<string>("Đoàn trường, THPT Vĩnh Thuận");
+  const [globalCategory, setGlobalCategory] = useState("Hoáº¡t Ä‘á»™ng ÄoÃ n");
+  const [globalYear, setGlobalYear] = useState("2026 - 2027");
+  const [globalPhotographer, setGlobalPhotographer] = useState("CLB Truyá»n ThÃ´ng");
+  const [globalTags, setGlobalTags] = useState("ÄoÃ n trÆ°á»ng, THPT VÄ©nh Thuáº­n");
   const [isUploading, setIsUploading] = useState(false);
 
-  // New Album state
+  // Album state
   const [albumTitle, setAlbumTitle] = useState("");
   const [albumDesc, setAlbumDesc] = useState("");
-  const [albumYear, setAlbumYear] = useState("2024 - 2025");
+  const [albumYear, setAlbumYear] = useState("2026 - 2027");
   const [albumDriveUrl, setAlbumDriveUrl] = useState("");
   const [albumCoverFile, setAlbumCoverFile] = useState<File | null>(null);
   const [albumCreating, setAlbumCreating] = useState(false);
   const [albumMessage, setAlbumMessage] = useState<string | null>(null);
 
-  // Check auth
+  // Auth check
   useEffect(() => {
     async function checkAuth() {
       if (isSupabaseConfigured && supabase) {
         const { data } = await supabase.auth.getSession();
         if (data.session?.user) {
-          setCurrentUser(data.session.user.email || "Quản trị viên");
+          setCurrentUser(data.session.user.email || "Quáº£n trá»‹ viÃªn");
         } else {
-          // Chưa đăng nhập thì chuyển về trang login
           router.push("/admin/login");
         }
       } else {
-        // Chưa cấu hình Supabase, hiển thị trang để admin kiểm tra trạng thái
-        setCurrentUser("Chế độ thử nghiệm (Chưa kết nối Supabase)");
+        setCurrentUser("Cháº¿ Ä‘á»™ thá»­ nghiá»‡m (ChÆ°a káº¿t ná»‘i Supabase)");
       }
       setLoading(false);
     }
@@ -100,64 +128,96 @@ export default function AdminDashboardPage() {
         if (error) throw error;
         setExistingMedia(data || []);
       }
-    } catch (err: unknown) {
-      console.error("Lỗi lấy danh sách tư liệu:", err);
+    } catch (err) {
+      console.error("Lá»—i láº¥y danh sÃ¡ch tÆ° liá»‡u:", err);
     } finally {
       setLoadingExisting(false);
     }
   };
 
-  useEffect(() => {
-    if (activeTab === "manage") {
-      fetchExistingMedia();
+  const fetchAdminAlbums = async () => {
+    setLoadingAlbums(true);
+    try {
+      const live = await getLiveAlbums();
+      setAdminAlbums(live);
+    } catch (err) {
+      console.error("Lá»—i láº¥y danh sÃ¡ch album:", err);
+    } finally {
+      setLoadingAlbums(false);
     }
+  };
+
+  /* Tab overview cáº§n cáº£ media + album; tab manage cáº§n media; tab manageAlbum cáº§n album
+     â€” bá»c setTimeout trÃ¡nh setState sync trong effect (rule react-hooks) */
+  useEffect(() => {
+    if (activeTab !== "overview" && activeTab !== "manage" && activeTab !== "manageAlbum")
+      return;
+    const t = setTimeout(() => {
+      if (activeTab === "overview" || activeTab === "manage") fetchExistingMedia();
+      if (activeTab === "overview" || activeTab === "manageAlbum") fetchAdminAlbums();
+    }, 0);
+    return () => clearTimeout(t);
   }, [activeTab]);
 
-  const handleDeleteMedia = async (id: string, src: string, title: string) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa tư liệu "${title}"? Bản ghi và file lưu trữ sẽ bị xóa vĩnh viễn.`)) {
+  /* XÃ³a album nhanh tá»« tab Quáº£n lÃ½ Album */
+  const handleDeleteAlbum = async (album: Album) => {
+    if (
+      !window.confirm(
+        `XÃ³a album "${album.title}"? TÆ° liá»‡u bÃªn trong váº«n Ä‘Æ°á»£c giá»¯, chá»‰ bá» liÃªn káº¿t.`
+      )
+    )
       return;
-    }
-
-    // 1. Biến mất NGAY LẬP TỨC trên giao diện (0ms, không cần chờ mạng hay F5)
-    setExistingMedia((prev) => prev.filter((item) => item.id !== id));
-    setDeleteMsg(`Đang xóa "${title}" khỏi hệ thống...`);
-
-    // 2. Thông báo cho các tab khác (như trang chủ) tự động đồng bộ ngay
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem("the_archives_updated_at", Date.now().toString());
-        window.dispatchEvent(new Event("storage"));
-      } catch {}
-    }
+    if (!supabase) return;
 
     try {
-      // 3. Xóa trực tiếp từ Supabase client
+      const { error } = await supabase.from("albums").delete().eq("id", album.id);
+      if (error) throw error;
+      setAdminAlbums((prev) => prev.filter((a) => a.id !== album.id));
+      setDeleteMsg(`ÄÃ£ xÃ³a album "${album.title}".`);
+      setTimeout(() => setDeleteMsg(null), 3000);
+      notifySync();
+    } catch (err) {
+      console.warn("Lá»—i xÃ³a album:", err);
+    }
+  };
+
+  const handleDeleteMedia = async (
+    id: string,
+    src: string,
+    title: string
+  ) => {
+    if (
+      !window.confirm(
+        `Báº¡n cÃ³ cháº¯c muá»‘n xÃ³a tÆ° liá»‡u "${title}"? Báº£n ghi vÃ  file lÆ°u trá»¯ sáº½ bá»‹ xÃ³a vÄ©nh viá»…n.`
+      )
+    )
+      return;
+
+    setExistingMedia((prev) => prev.filter((item) => item.id !== id));
+    setDeleteMsg(`Äang xÃ³a "${title}" khá»i há»‡ thá»‘ng...`);
+    notifySync();
+
+    try {
       if (isSupabaseConfigured && supabase) {
         await supabase.from("media_items").delete().eq("id", id);
       }
-
-      // 4. Gọi API server để dọn file S3 và dọn database
-      await fetch("/api/media/delete", {
+      await authedFetch("/api/media/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, src }),
       });
-
-      setDeleteMsg(`Đã xóa thành công "${title}" khỏi hệ thống!`);
+      setDeleteMsg(`ÄÃ£ xÃ³a thÃ nh cÃ´ng "${title}"!`);
       setTimeout(() => setDeleteMsg(null), 3000);
-    } catch (err: unknown) {
-      console.warn("Lỗi khi xử lý xóa:", err);
+    } catch (err) {
+      console.warn("Lá»—i khi xá»­ lÃ½ xÃ³a:", err);
     }
   };
 
   const handleLogout = async () => {
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
+    if (supabase) await supabase.auth.signOut();
     router.push("/admin/login");
   };
 
-  // Handle files selected
   const handleFilesSelected = (files: FileList | null) => {
     if (!files) return;
     const newItems: UploadQueueItem[] = Array.from(files).map((file) => ({
@@ -175,7 +235,6 @@ export default function AdminDashboardPage() {
     setQueue((prev) => [...prev, ...newItems]);
   };
 
-  // Remove from queue
   const handleRemoveQueueItem = (index: number) => {
     setQueue((prev) => {
       const copy = [...prev];
@@ -185,7 +244,6 @@ export default function AdminDashboardPage() {
     });
   };
 
-  // Upload all items in queue via S3 Presigned URL
   const handleStartUpload = async () => {
     if (queue.length === 0) return;
     setIsUploading(true);
@@ -194,17 +252,14 @@ export default function AdminDashboardPage() {
       const item = queue[i];
       if (item.status === "success") continue;
 
-      // Update item status to uploading
       setQueue((prev) => {
         const copy = [...prev];
-        copy[i].status = "uploading";
-        copy[i].progress = 10;
+        copy[i] = { ...copy[i], status: "uploading", progress: 10 };
         return copy;
       });
 
       try {
-        // Bước 1: Xin Presigned URL từ Next.js API
-        const presignRes = await fetch("/api/upload/presign", {
+        const presignRes = await authedFetch("/api/upload/presign", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -216,37 +271,31 @@ export default function AdminDashboardPage() {
 
         if (!presignRes.ok) {
           const errData = await presignRes.json();
-          throw new Error(errData.error || "Không thể tạo link ký upload");
+          throw new Error(errData.error || "KhÃ´ng thá»ƒ táº¡o link kÃ½ upload");
         }
 
         const { uploadUrl, publicUrl } = await presignRes.json();
 
         setQueue((prev) => {
           const copy = [...prev];
-          copy[i].progress = 40;
+          copy[i] = { ...copy[i], progress: 40 };
           return copy;
         });
 
-        // Bước 2: Bắn trực tiếp file lên kho S3 PIKAMC qua Presigned URL
         const uploadRes = await fetch(uploadUrl, {
           method: "PUT",
-          headers: {
-            "Content-Type": item.file.type,
-          },
+          headers: { "Content-Type": item.file.type },
           body: item.file,
         });
 
-        if (!uploadRes.ok) {
-          throw new Error("Không thể đẩy file trực tiếp lên kho S3");
-        }
+        if (!uploadRes.ok) throw new Error("KhÃ´ng thá»ƒ Ä‘áº©y file lÃªn kho S3");
 
         setQueue((prev) => {
           const copy = [...prev];
-          copy[i].progress = 80;
+          copy[i] = { ...copy[i], progress: 80 };
           return copy;
         });
 
-        // Bước 3: Lưu metadata vào Supabase PostgreSQL
         if (supabase) {
           const isVideo = item.file.type.startsWith("video");
           const tagsArray = item.tags
@@ -263,7 +312,7 @@ export default function AdminDashboardPage() {
             aspect: "landscape",
             src: publicUrl,
             photographer: item.photographer,
-            resolution: `${item.file.name.split(".").pop()?.toUpperCase()} · ${(
+            resolution: `${item.file.name.split(".").pop()?.toUpperCase() ?? ""} Â· ${(
               item.file.size /
               (1024 * 1024)
             ).toFixed(1)} MB`,
@@ -271,23 +320,20 @@ export default function AdminDashboardPage() {
             drive_url: item.driveUrl || null,
           });
 
-          if (dbError) {
-            console.warn("Lưu database Supabase thất bại:", dbError);
-          }
+          if (dbError) console.warn("LÆ°u database tháº¥t báº¡i:", dbError);
         }
 
         setQueue((prev) => {
           const copy = [...prev];
-          copy[i].status = "success";
-          copy[i].progress = 100;
+          copy[i] = { ...copy[i], status: "success", progress: 100 };
           return copy;
         });
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : "Tải lên thất bại";
+      } catch (err) {
+        const errorMsg =
+          err instanceof Error ? err.message : "Táº£i lÃªn tháº¥t báº¡i";
         setQueue((prev) => {
           const copy = [...prev];
-          copy[i].status = "error";
-          copy[i].errorMessage = errorMsg;
+          copy[i] = { ...copy[i], status: "error", errorMessage: errorMsg };
           return copy;
         });
       }
@@ -295,15 +341,9 @@ export default function AdminDashboardPage() {
 
     setIsUploading(false);
     fetchExistingMedia();
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem("the_archives_updated_at", Date.now().toString());
-        window.dispatchEvent(new Event("storage"));
-      } catch {}
-    }
+    notifySync();
   };
 
-  // Create new Album
   const handleCreateAlbum = async (e: React.FormEvent) => {
     e.preventDefault();
     setAlbumCreating(true);
@@ -312,15 +352,14 @@ export default function AdminDashboardPage() {
     try {
       let coverPublicUrl = "/logo.jpg";
 
-      // Nếu có upload ảnh bìa
       if (albumCoverFile) {
-        const presignRes = await fetch("/api/upload/presign", {
+        const presignRes = await authedFetch("/api/upload/presign", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             fileName: albumCoverFile.name,
             fileType: albumCoverFile.type,
-            albumTitle: albumTitle,
+            albumTitle,
           }),
         });
 
@@ -335,7 +374,6 @@ export default function AdminDashboardPage() {
         }
       }
 
-      // Lưu album vào Supabase
       if (supabase) {
         const { error: albumErr } = await supabase.from("albums").insert({
           title: albumTitle,
@@ -344,25 +382,18 @@ export default function AdminDashboardPage() {
           cover_url: coverPublicUrl,
           drive_folder_url: albumDriveUrl || null,
         });
-
         if (albumErr) throw albumErr;
       }
 
-      setAlbumMessage("Đã tạo Album mới thành công vào cơ sở dữ liệu!");
+      setAlbumMessage("ÄÃ£ táº¡o Album má»›i thÃ nh cÃ´ng!");
       setAlbumTitle("");
       setAlbumDesc("");
       setAlbumCoverFile(null);
       setAlbumDriveUrl("");
-
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem("the_archives_updated_at", Date.now().toString());
-          window.dispatchEvent(new Event("storage"));
-        } catch {}
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Tạo album thất bại";
-      setAlbumMessage(`Lỗi: ${msg}`);
+      notifySync();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Táº¡o album tháº¥t báº¡i";
+      setAlbumMessage(`Lá»—i: ${msg}`);
     } finally {
       setAlbumCreating(false);
     }
@@ -372,191 +403,180 @@ export default function AdminDashboardPage() {
     if (!manageSearch) return true;
     const q = manageSearch.toLowerCase();
     return (
-      item.title?.toLowerCase().includes(q) ||
-      item.category?.toLowerCase().includes(q) ||
-      item.school_year?.toLowerCase().includes(q) ||
-      item.photographer?.toLowerCase().includes(q)
+      (item.title as string)?.toLowerCase().includes(q) ||
+      (item.category as string)?.toLowerCase().includes(q) ||
+      (item.school_year as string)?.toLowerCase().includes(q) ||
+      (item.photographer as string)?.toLowerCase().includes(q)
     );
   });
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-bg-primary text-text-muted">
-        Đang kiểm tra quyền quản trị...
+      <div className="flex min-h-screen items-center justify-center bg-bg text-[13px] text-ink-3">
+        Äang kiá»ƒm tra quyá»n quáº£n trá»‹...
       </div>
     );
   }
 
+  const tabs: { id: Tab; label: string; icon: typeof UploadSimple }[] = [
+    { id: "overview", label: "Tá»•ng quan", icon: ChartPie },
+    { id: "upload", label: "Táº£i lÃªn", icon: UploadSimple },
+    { id: "manage", label: `Quáº£n lÃ½ (${existingMedia.length})`, icon: Images },
+    { id: "album", label: "Táº¡o Album", icon: FolderPlus },
+    { id: "manageAlbum", label: `Album (${adminAlbums.length})`, icon: PencilSimple },
+    { id: "status", label: "Tráº¡ng thÃ¡i", icon: Warning },
+  ];
+
   return (
-    <div className="min-h-screen bg-bg-primary text-text-primary">
-      {/* Top Navbar */}
-      <header className="border-b border-border-subtle bg-bg-secondary/70 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative w-8 h-8 rounded-full overflow-hidden ring-1 ring-accent-blue/40">
+    <div className="min-h-screen bg-bg text-ink">
+      {/* Header */}
+      <header className="sticky top-0 z-50 border-b border-line bg-bg/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 md:px-6">
+          <div className="flex items-center gap-2.5">
+            <span className="relative block h-8 w-8 overflow-hidden rounded-full ring-1 ring-line-strong">
               <Image
                 src="/logo.jpg"
-                alt="Logo THPT Vĩnh Thuận"
+                alt="Logo THPT VÄ©nh Thuáº­n"
                 fill
                 className="object-cover"
                 sizes="32px"
               />
-            </div>
+            </span>
             <div>
-              <span className="font-mono text-xs uppercase tracking-[0.14em] font-semibold">
-                The Archives Admin
-              </span>
-              <p className="text-[10px] text-text-muted hidden sm:block">
+              <p className="text-[13px] font-semibold tracking-tight">
+                The Archives Â· Admin
+              </p>
+              <p className="hidden text-[10px] text-ink-3 sm:block">
                 {currentUser}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
             <a
               href="/"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-text-secondary hover:text-white bg-white/5 hover:bg-white/10 border border-border-subtle transition-all duration-200"
+              className="flex items-center gap-1.5 rounded-full border border-line px-3.5 py-1.5 text-[12px] text-ink-2 transition-colors duration-200 hover:border-line-strong hover:text-ink"
             >
-              <Globe size={14} weight="light" />
-              <span>Xem trang web</span>
+              <Globe size={13} />
+              <span className="hidden sm:inline">Xem trang web</span>
             </a>
-
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-accent-red hover:bg-accent-red/10 border border-accent-red/20 transition-all duration-200"
+              className="flex items-center gap-1.5 rounded-full border border-danger/30 bg-danger-soft px-3.5 py-1.5 text-[12px] font-medium text-danger transition-colors duration-200 hover:border-danger/50"
             >
-              <SignOut size={14} weight="bold" />
-              <span>Đăng xuất</span>
+              <SignOut size={13} weight="bold" />
+              <span>ÄÄƒng xuáº¥t</span>
             </button>
           </div>
         </div>
       </header>
 
-      {/* Main Container */}
-      <main className="max-w-[1400px] mx-auto px-4 md:px-8 py-8">
-        {/* Navigation Tabs */}
-        <div className="flex flex-wrap items-center gap-3 border-b border-border-subtle pb-4">
-          <button
-            onClick={() => setActiveTab("upload")}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold transition-all duration-200 ${
-              activeTab === "upload"
-                ? "bg-accent-red text-white shadow-md shadow-accent-red/25"
-                : "bg-bg-card hover:bg-white/5 text-text-secondary border border-border-subtle"
-            }`}
-          >
-            <UploadSimple size={16} weight="bold" />
-            <span>Tải lên tư liệu trực tiếp</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab("manage");
-              fetchExistingMedia();
-            }}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold transition-all duration-200 ${
-              activeTab === "manage"
-                ? "bg-accent-blue text-white shadow-md shadow-accent-blue/25"
-                : "bg-bg-card hover:bg-white/5 text-text-secondary border border-border-subtle"
-            }`}
-          >
-            <Images size={16} weight="bold" />
-            <span>Quản lý tư liệu ({existingMedia.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("album")}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold transition-all duration-200 ${
-              activeTab === "album"
-                ? "bg-accent-gold text-bg-primary font-bold shadow-md shadow-accent-gold/25"
-                : "bg-bg-card hover:bg-white/5 text-text-secondary border border-border-subtle"
-            }`}
-          >
-            <FolderPlus size={16} weight="bold" />
-            <span>Tạo Album mới</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("status")}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold transition-all duration-200 ${
-              activeTab === "status"
-                ? "bg-accent-gold text-bg-primary font-bold shadow-md shadow-accent-gold/25"
-                : "bg-bg-card hover:bg-white/5 text-text-secondary border border-border-subtle"
-            }`}
-          >
-            <span>Trạng thái kết nối</span>
-          </button>
+      <main className="mx-auto max-w-6xl px-4 py-8 md:px-6">
+        {/* Tabs */}
+        <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto border-b border-line px-1 pb-4">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                }}
+                className={`flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-[13px] font-medium whitespace-nowrap transition-colors duration-200 ${
+                  isActive
+                    ? "bg-accent text-white"
+                    : "bg-surface-2 text-ink-2 hover:bg-line hover:text-ink"
+                }`}
+              >
+                <tab.icon size={15} weight={isActive ? "bold" : "regular"} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* TAB 1: UPLOAD MEDIA DIRECT TO S3 */}
+        {/* TAB: UPLOAD */}
         {activeTab === "upload" && (
-          <div className="mt-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* Left: Global Config & Upload Dropzone */}
-            <div className="lg:col-span-5 space-y-6">
-              <div className="rounded-3xl bg-bg-card border border-border-subtle p-6 space-y-4">
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-accent-blue">
-                  Cài đặt thông tin chung
-                </h2>
-                <p className="text-xs text-text-muted">
-                  Các giá trị này sẽ tự động được gán cho các file tải lên đợt này.
-                </p>
+          <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-5">
+            <div className="space-y-6 lg:col-span-2">
+              <div className="space-y-4 rounded-2xl border border-line bg-surface p-6">
+                <div>
+                  <h2 className="text-sm font-semibold text-ink">
+                    ThÃ´ng tin chung
+                  </h2>
+                  <p className="mt-1 text-[12px] text-ink-3">
+                    Tá»± Ä‘á»™ng gÃ¡n cho má»i file táº£i lÃªn trong Ä‘á»£t nÃ y.
+                  </p>
+                </div>
 
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs text-text-secondary">Chuyên mục</label>
+                <div className="space-y-3.5">
+                  <div className="space-y-1.5">
+                    <label className="text-[12px] font-medium text-ink-2">
+                      ChuyÃªn má»¥c
+                    </label>
                     <select
                       value={globalCategory}
                       onChange={(e) => setGlobalCategory(e.target.value)}
-                      className="w-full mt-1 px-3 py-2 rounded-xl bg-bg-secondary border border-border-subtle text-xs text-text-primary focus:border-accent-blue focus:outline-none"
+                      className={selectCls}
                     >
-                      {categories.filter((c) => c !== "Tất cả").map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat}
-                        </option>
-                      ))}
+                      {categories
+                        .filter((c) => c !== "Tất cả")
+                        .map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
                     </select>
                   </div>
 
-                  <div>
-                    <label className="text-xs text-text-secondary">Năm học</label>
-                    <select
+                  <div className="space-y-1.5">
+                    <label className="text-[12px] font-medium text-ink-2">
+                      NÄƒm há»c
+                    </label>
+                    <SchoolYearInput
+                      id="upload-global-year"
                       value={globalYear}
-                      onChange={(e) => setGlobalYear(e.target.value)}
-                      className="w-full mt-1 px-3 py-2 rounded-xl bg-bg-secondary border border-border-subtle text-xs text-text-primary focus:border-accent-blue focus:outline-none"
-                    >
-                      {schoolYears.filter((y) => y !== "Tất cả năm").map((yr) => (
-                        <option key={yr} value={yr}>
-                          {yr}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setGlobalYear}
+                    />
                   </div>
 
-                  <div>
-                    <label className="text-xs text-text-secondary">Tác giả / Người chụp</label>
-                    <div className="relative flex items-center mt-1">
-                      <User size={14} className="absolute left-3 text-text-muted" />
+                  <div className="space-y-1.5">
+                    <label className="text-[12px] font-medium text-ink-2">
+                      TÃ¡c giáº£ / NgÆ°á»i chá»¥p
+                    </label>
+                    <div className="relative">
+                      <User
+                        size={14}
+                        className="absolute top-1/2 left-3.5 -translate-y-1/2 text-ink-3"
+                      />
                       <input
                         type="text"
                         value={globalPhotographer}
                         onChange={(e) => setGlobalPhotographer(e.target.value)}
-                        placeholder="VD: Nguyễn Hoàng Nam 12A1"
-                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-bg-secondary border border-border-subtle text-xs text-text-primary focus:border-accent-blue focus:outline-none"
+                        placeholder="VD: Nguyá»…n HoÃ ng Nam 12A1"
+                        className={`${inputCls} pl-10`}
                       />
                     </div>
                   </div>
 
-                  <div>
-                    <label className="text-xs text-text-secondary">Thẻ Tags (phân cách bằng dấu phẩy)</label>
-                    <div className="relative flex items-center mt-1">
-                      <Tag size={14} className="absolute left-3 text-text-muted" />
+                  <div className="space-y-1.5">
+                    <label className="text-[12px] font-medium text-ink-2">
+                      Tags (phÃ¢n cÃ¡ch báº±ng dáº¥u pháº©y)
+                    </label>
+                    <div className="relative">
+                      <Tag
+                        size={14}
+                        className="absolute top-1/2 left-3.5 -translate-y-1/2 text-ink-3"
+                      />
                       <input
                         type="text"
                         value={globalTags}
                         onChange={(e) => setGlobalTags(e.target.value)}
-                        placeholder="Đoàn trường, Khai giảng 2025"
-                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-bg-secondary border border-border-subtle text-xs text-text-primary focus:border-accent-blue focus:outline-none"
+                        placeholder="ÄoÃ n trÆ°á»ng, Khai giáº£ng 2025"
+                        className={`${inputCls} pl-10`}
                       />
                     </div>
                   </div>
@@ -564,9 +584,9 @@ export default function AdminDashboardPage() {
               </div>
 
               {/* Dropzone */}
-              <div
+              <button
                 onClick={() => fileInputRef.current?.click()}
-                className="rounded-3xl border-2 border-dashed border-border-subtle hover:border-accent-blue bg-bg-card/40 p-8 text-center cursor-pointer transition-all duration-200 group"
+                className="group w-full cursor-pointer rounded-2xl border-2 border-dashed border-line bg-surface/50 p-8 text-center transition-colors duration-200 hover:border-line-strong"
               >
                 <input
                   ref={fileInputRef}
@@ -576,56 +596,60 @@ export default function AdminDashboardPage() {
                   className="hidden"
                   onChange={(e) => handleFilesSelected(e.target.files)}
                 />
-                <div className="w-14 h-14 rounded-full bg-accent-blue/10 text-accent-blue mx-auto flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                  <UploadSimple size={28} weight="bold" />
-                </div>
-                <h3 className="mt-4 text-sm font-semibold text-text-primary">
-                  Kéo thả hoặc bấm để chọn ảnh/video
-                </h3>
-                <p className="mt-1 text-xs text-text-muted">
-                  Hỗ trợ PNG, JPG, RAW, MP4, MOV (Không giới hạn dung lượng qua S3)
-                </p>
-              </div>
+                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-2 text-ink-2 transition-transform duration-200 group-hover:scale-105">
+                  <UploadSimple size={22} />
+                </span>
+                <span className="mt-4 block text-sm font-semibold text-ink">
+                  KÃ©o tháº£ hoáº·c báº¥m Ä‘á»ƒ chá»n áº£nh / video
+                </span>
+                <span className="mt-1 block text-[12px] text-ink-3">
+                  PNG, JPG, RAW, MP4, MOV â€” khÃ´ng giá»›i háº¡n qua S3
+                </span>
+              </button>
             </div>
 
-            {/* Right: Queue List & Execution */}
-            <div className="lg:col-span-7 space-y-4">
-              <div className="flex items-center justify-between">
+            {/* Queue */}
+            <div className="space-y-4 lg:col-span-3">
+              <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-text-primary">
-                    Hàng đợi tải lên ({queue.length} file)
+                  <h2 className="text-base font-semibold text-ink">
+                    HÃ ng Ä‘á»£i ({queue.length} file)
                   </h2>
-                  <p className="text-xs text-text-muted">
-                    File sẽ được ký link và đẩy trực tiếp lên kho S3 PIKAMC.
+                  <p className="text-[12px] text-ink-3">
+                    File Ä‘Æ°á»£c kÃ½ link vÃ  Ä‘áº©y trá»±c tiáº¿p lÃªn kho S3 PIKAMC.
                   </p>
                 </div>
-
                 {queue.length > 0 && (
                   <button
                     onClick={handleStartUpload}
                     disabled={isUploading}
-                    className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-accent-red hover:bg-accent-red-hover text-white text-xs font-semibold shadow-lg shadow-accent-red/25 disabled:opacity-50 transition-all duration-200"
+                    className="flex shrink-0 items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-[13px] font-semibold text-white transition-colors duration-200 hover:bg-accent-hover disabled:opacity-50"
                   >
-                    <UploadSimple size={16} weight="bold" />
-                    <span>{isUploading ? "Đang đẩy lên S3..." : "Tiến hành tải lên tất cả"}</span>
+                    <UploadSimple size={15} weight="bold" />
+                    <span className="hidden sm:inline">
+                      {isUploading ? "Äang Ä‘áº©y..." : "Táº£i lÃªn táº¥t cáº£"}
+                    </span>
+                    <span className="sm:hidden">
+                      {isUploading ? "..." : "Táº£i lÃªn"}
+                    </span>
                   </button>
                 )}
               </div>
 
               {queue.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-border-subtle bg-bg-card/30 p-12 text-center text-xs text-text-muted">
-                  Chưa có file nào trong hàng đợi. Bấm vào khung bên trái để chọn ảnh/video sự kiện.
+                <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center text-[13px] text-ink-3">
+                  ChÆ°a cÃ³ file nÃ o trong hÃ ng Ä‘á»£i.
                 </div>
               ) : (
-                <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+                <div className="max-h-[600px] space-y-2.5 overflow-y-auto pr-1">
                   {queue.map((item, idx) => (
                     <div
                       key={idx}
-                      className="rounded-2xl bg-bg-card border border-border-subtle p-3.5 flex items-center gap-4 transition-all duration-200"
+                      className="flex items-center gap-4 rounded-xl border border-line bg-surface p-3.5"
                     >
-                      <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-bg-secondary shrink-0">
+                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-bg">
                         {item.file.type.startsWith("video") ? (
-                          <div className="w-full h-full flex items-center justify-center text-xs text-accent-red font-mono">
+                          <div className="flex h-full w-full items-center justify-center font-mono text-[10px] text-accent">
                             VIDEO
                           </div>
                         ) : (
@@ -634,53 +658,53 @@ export default function AdminDashboardPage() {
                             alt={item.title}
                             fill
                             className="object-cover"
-                            sizes="64px"
+                            sizes="56px"
                           />
                         )}
                       </div>
 
-                      <div className="flex-1 min-w-0 space-y-1">
+                      <div className="min-w-0 flex-1 space-y-1">
                         <input
                           type="text"
                           value={item.title}
+                          disabled={item.status === "success"}
                           onChange={(e) => {
                             const val = e.target.value;
                             setQueue((prev) => {
                               const copy = [...prev];
-                              copy[idx].title = val;
+                              copy[idx] = { ...copy[idx], title: val };
                               return copy;
                             });
                           }}
-                          className="w-full bg-transparent text-xs font-medium text-text-primary focus:outline-none hover:border-b border-border-subtle"
+                          className="w-full rounded-md bg-transparent text-[13px] font-medium text-ink focus:outline-none focus:bg-bg focus:px-1.5 focus:py-1"
                         />
-                        <div className="flex items-center gap-2 text-[11px] text-text-muted">
-                          <span>{(item.file.size / (1024 * 1024)).toFixed(1)} MB</span>
-                          <span>·</span>
-                          <span className="text-accent-blue">{item.category}</span>
-                          <span>·</span>
+                        <div className="flex items-center gap-1.5 text-[11px] text-ink-3">
+                          <span className="tabular-nums">
+                            {(item.file.size / (1024 * 1024)).toFixed(1)} MB
+                          </span>
+                          <span>Â·</span>
+                          <span>{item.category}</span>
+                          <span>Â·</span>
                           <span>{item.schoolYear}</span>
                         </div>
 
-                        {/* Progress Bar */}
                         {item.status === "uploading" && (
-                          <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden mt-1">
+                          <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
                             <div
-                              className="bg-accent-blue h-full transition-all duration-200"
+                              className="h-full bg-accent transition-all duration-300"
                               style={{ width: `${item.progress}%` }}
                             />
                           </div>
                         )}
-
                         {item.status === "success" && (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
-                            <CheckCircle size={13} weight="fill" />
-                            Đã lưu vào S3 và Supabase
+                          <span className="flex items-center gap-1 text-[11px] text-success">
+                            <CheckCircle size={12} weight="fill" />
+                            ÄÃ£ lÆ°u vÃ o S3 vÃ  Supabase
                           </span>
                         )}
-
                         {item.status === "error" && (
-                          <span className="text-[11px] text-accent-red">
-                            {item.errorMessage || "Lỗi tải lên"}
+                          <span className="text-[11px] text-accent">
+                            {item.errorMessage || "Lá»—i táº£i lÃªn"}
                           </span>
                         )}
                       </div>
@@ -688,10 +712,14 @@ export default function AdminDashboardPage() {
                       <button
                         onClick={() => handleRemoveQueueItem(idx)}
                         disabled={isUploading}
-                        className="text-text-muted hover:text-accent-red p-2"
-                        title="Xóa khỏi danh sách"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-3 transition-colors hover:bg-surface-2 hover:text-accent disabled:opacity-40"
+                        title="XÃ³a khá»i danh sÃ¡ch"
                       >
-                        <Trash size={16} />
+                        {item.status === "success" ? (
+                          <X size={15} />
+                        ) : (
+                          <Trash size={15} />
+                        )}
                       </button>
                     </div>
                   ))}
@@ -701,143 +729,152 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 2: MANAGE & DELETE MEDIA */}
+        {/* TAB: MANAGE */}
         {activeTab === "manage" && (
-          <div className="mt-8 space-y-6">
-            <div className="rounded-3xl bg-bg-card border border-border-subtle p-6 md:p-8 space-y-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-semibold text-text-primary flex items-center gap-2">
-                    <Images size={24} className="text-accent-blue" weight="bold" />
-                    <span>Quản lý & Dọn dẹp tư liệu ({existingMedia.length})</span>
-                  </h2>
-                  <p className="text-xs text-text-muted mt-1">
-                    Danh sách tư liệu đã được lưu trữ trong Supabase và S3 PIKAMC.
-                  </p>
+          <div className="mt-8 space-y-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-ink">
+                  Quáº£n lÃ½ tÆ° liá»‡u ({existingMedia.length})
+                </h2>
+                <p className="mt-0.5 text-[12px] text-ink-3">
+                  Danh sÃ¡ch tÆ° liá»‡u trong Supabase vÃ  S3 PIKAMC.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <MagnifyingGlass
+                    size={14}
+                    className="absolute top-1/2 left-3 -translate-y-1/2 text-ink-3"
+                  />
+                  <input
+                    type="text"
+                    value={manageSearch}
+                    onChange={(e) => setManageSearch(e.target.value)}
+                    placeholder="Lá»c tiÃªu Ä‘á», nÄƒm..."
+                    className="w-48 rounded-full border border-line bg-bg py-2 pr-3 pl-9 text-[12px] text-ink placeholder:text-ink-3 focus:border-line-strong focus:outline-none"
+                  />
                 </div>
+                <button
+                  onClick={fetchExistingMedia}
+                  disabled={loadingExisting}
+                  className="flex items-center gap-1.5 rounded-full border border-line px-3.5 py-2 text-[12px] font-medium text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+                >
+                  <ArrowsClockwise
+                    size={13}
+                    className={loadingExisting ? "animate-spin" : ""}
+                  />
+                  <span>LÃ m má»›i</span>
+                </button>
+              </div>
+            </div>
 
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-                    <input
-                      type="text"
-                      value={manageSearch}
-                      onChange={(e) => setManageSearch(e.target.value)}
-                      placeholder="Lọc tiêu đề, năm..."
-                      className="pl-8 pr-3 py-1.5 rounded-full bg-bg-secondary border border-border-subtle text-xs text-text-primary focus:border-accent-blue focus:outline-none w-48"
-                    />
-                  </div>
+            {deleteMsg && (
+              <div className="flex items-center gap-2 rounded-xl border border-success/30 bg-success-soft px-4 py-3 text-[12px] text-success">
+                <CheckCircle size={15} weight="fill" />
+                <span>{deleteMsg}</span>
+              </div>
+            )}
 
-                  <button
-                    onClick={fetchExistingMedia}
-                    disabled={loadingExisting}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-white/5 hover:bg-white/10 border border-border-subtle transition-all duration-200"
+            <div className="rounded-xl border border-line bg-surface px-4 py-3 text-[12px] leading-relaxed text-ink-2">
+              <span className="font-semibold text-ink">Ghi chÃº: </span>
+              Náº¿u Ä‘Ã£ xÃ³a file trá»±c tiáº¿p trÃªn báº£ng Ä‘iá»u khiá»ƒn S3 nhÆ°ng trang chá»§
+              váº«n hiá»ƒn thá»‹ (hoáº·c lá»—i 400), hÃ£y tÃ¬m má»¥c Ä‘Ã³ bÃªn dÆ°á»›i vÃ  báº¥m{" "}
+              <span className="font-semibold text-accent">XÃ³a</span> Ä‘á»ƒ gá»¡ báº£n
+              ghi thá»«a khá»i Supabase.
+            </div>
+
+            {loadingExisting ? (
+              <div className="rounded-2xl border border-dashed border-line py-16 text-center text-[13px] text-ink-3">
+                Äang táº£i danh sÃ¡ch tÆ° liá»‡u...
+              </div>
+            ) : filteredExistingMedia.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-line py-16 text-center text-[13px] text-ink-3">
+                {existingMedia.length === 0
+                  ? "ChÆ°a cÃ³ tÆ° liá»‡u nÃ o trong há»‡ thá»‘ng."
+                  : "KhÃ´ng tÃ¬m tháº¥y tÆ° liá»‡u khá»›p tá»« khÃ³a."}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                {filteredExistingMedia.map((item) => (
+                  <div
+                    key={String(item.id)}
+                    className="flex flex-col justify-between gap-3 rounded-xl border border-line bg-surface p-4 transition-colors hover:border-line-strong"
                   >
-                    <ArrowsClockwise size={14} className={loadingExisting ? "animate-spin" : ""} />
-                    <span>Làm mới</span>
-                  </button>
-                </div>
-              </div>
-
-              {deleteMsg && (
-                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
-                  <CheckCircle size={16} weight="fill" />
-                  <span>{deleteMsg}</span>
-                </div>
-              )}
-
-              <div className="p-4 rounded-2xl bg-accent-blue/10 border border-accent-blue/20 text-xs text-text-secondary">
-                <span className="font-semibold text-accent-blue">💡 Ghi chú dọn dẹp: </span>
-                Nếu bạn đã vào bảng điều khiển S3 để xóa thư mục/file nhưng trang chủ vẫn hiển thị bài đăng (hoặc báo lỗi 400), hãy tìm mục đó ở bảng bên dưới và bấm nút <strong className="text-accent-red font-semibold">Xóa</strong>. Thao tác này sẽ gỡ hoàn toàn bản ghi thừa trong Supabase.
-              </div>
-
-              {loadingExisting ? (
-                <div className="py-16 text-center text-text-muted text-xs">
-                  Đang tải danh sách tư liệu từ cơ sở dữ liệu...
-                </div>
-              ) : filteredExistingMedia.length === 0 ? (
-                <div className="py-16 text-center text-text-muted text-xs">
-                  {existingMedia.length === 0
-                    ? "Chưa có tư liệu nào trong hệ thống hoặc bảng media_items đang trống."
-                    : "Không tìm thấy tư liệu nào khớp với từ khóa tìm kiếm."}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredExistingMedia.map((item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-2xl bg-bg-secondary border border-border-subtle p-4 flex flex-col justify-between space-y-3 group hover:border-border-hover transition-all"
-                    >
-                      <div className="flex gap-3">
-                        <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-bg-primary shrink-0 border border-border-subtle">
-                          <img
-                            src={item.src}
-                            alt={item.title}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = "/logo.jpg";
-                            }}
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h4 className="text-xs font-semibold text-text-primary line-clamp-2 leading-snug">
-                            {item.title}
-                          </h4>
-                          <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent-blue/15 text-accent-blue font-mono">
-                              {item.category}
-                            </span>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-text-muted font-mono">
-                              {item.school_year}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-text-muted mt-1.5 truncate">
-                            {item.photographer} · {item.date}
-                          </p>
-                        </div>
+                    <div className="flex gap-3">
+                      <div className="relative h-18 w-18 shrink-0 overflow-hidden rounded-lg border border-line bg-bg">
+                        <img
+                          src={formatSrc(String(item.src))}
+                          alt={String(item.title)}
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "/logo.jpg";
+                          }}
+                        />
                       </div>
-
-                      <div className="pt-2 border-t border-border-subtle flex items-center justify-between text-[11px]">
-                        <span className="text-text-muted font-mono text-[10px] truncate max-w-[160px]">
-                          {item.resolution || "Full HD"}
-                        </span>
-
-                        <button
-                          onClick={() => handleDeleteMedia(item.id, item.src, item.title)}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-accent-red hover:bg-accent-red/10 border border-accent-red/20 transition-all duration-200 font-medium"
-                          title="Xóa khỏi Database và S3"
-                        >
-                          <Trash size={14} weight="bold" />
-                          <span>Xóa</span>
-                        </button>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="line-clamp-2 text-[13px] leading-snug font-semibold text-ink">
+                          {String(item.title)}
+                        </h4>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] text-ink-2">
+                            {String(item.category)}
+                          </span>
+                          <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] text-ink-3">
+                            {String(item.school_year)}
+                          </span>
+                        </div>
+                        <p className="mt-1.5 truncate text-[10px] text-ink-3">
+                          {String(item.photographer)} Â· {String(item.date)}
+                        </p>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+
+                    <div className="flex items-center justify-between border-t border-line pt-2.5">
+                      <span className="max-w-[150px] truncate font-mono text-[10px] text-ink-3">
+                        {String(item.resolution || "Full HD")}
+                      </span>
+                      <button
+                        onClick={() =>
+                          handleDeleteMedia(
+                            String(item.id),
+                            String(item.src),
+                            String(item.title)
+                          )
+                        }
+                        className="flex items-center gap-1 rounded-lg border border-danger/30 bg-danger-soft px-3 py-1.5 text-[11px] font-semibold text-danger transition-colors hover:border-danger/50"
+                      >
+                        <Trash size={13} weight="bold" />
+                        <span>XÃ³a</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* TAB 3: CREATE ALBUM */}
+        {/* TAB: ALBUM */}
         {activeTab === "album" && (
-          <div className="mt-8 max-w-2xl mx-auto">
-            <div className="rounded-3xl bg-bg-card border border-border-subtle p-8 space-y-6">
+          <div className="mx-auto mt-8 max-w-2xl">
+            <div className="space-y-6 rounded-2xl border border-line bg-surface p-6 md:p-8">
               <div>
-                <h2 className="text-xl font-semibold text-text-primary">
-                  Tạo Album Chuyên Đề Mới
+                <h2 className="text-base font-semibold text-ink">
+                  Táº¡o Album chuyÃªn Ä‘á» má»›i
                 </h2>
-                <p className="text-xs text-text-muted mt-1">
-                  Nhóm các bức ảnh cùng sự kiện vào chung một bộ sưu tập để hiển thị trên thanh trượt Album nổi bật.
+                <p className="mt-1 text-[12px] text-ink-3">
+                  NhÃ³m áº£nh cÃ¹ng sá»± kiá»‡n thÃ nh bá»™ sÆ°u táº­p hiá»ƒn thá»‹ trÃªn trang
+                  chá»§.
                 </p>
               </div>
 
               {albumMessage && (
                 <div
-                  className={`p-4 rounded-2xl text-xs ${
-                    albumMessage.startsWith("Lỗi")
-                      ? "bg-accent-red/10 border border-accent-red/30 text-accent-red"
-                      : "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
+                  className={`rounded-xl px-4 py-3 text-[13px] ${
+                    albumMessage.startsWith("Lá»—i")
+                      ? "border border-danger/30 bg-danger-soft text-danger"
+                      : "border border-success/30 bg-success-soft text-success"
                   }`}
                 >
                   {albumMessage}
@@ -845,154 +882,392 @@ export default function AdminDashboardPage() {
               )}
 
               <form onSubmit={handleCreateAlbum} className="space-y-4">
-                <div>
-                  <label className="text-xs text-text-secondary font-medium">
-                    Tên Album / Tên sự kiện
+                <div className="space-y-1.5">
+                  <label className="text-[13px] font-medium text-ink-2">
+                    TÃªn Album / sá»± kiá»‡n
                   </label>
                   <input
                     type="text"
                     required
                     value={albumTitle}
                     onChange={(e) => setAlbumTitle(e.target.value)}
-                    placeholder="VD: Lễ Khai Giảng Năm Học 2025 - 2026"
-                    className="w-full mt-1 px-4 py-2.5 rounded-xl bg-bg-secondary border border-border-subtle text-sm text-text-primary focus:border-accent-blue focus:outline-none"
+                    placeholder="VD: Lá»… Khai Giáº£ng NÄƒm Há»c 2025 - 2026"
+                    className={inputCls}
                   />
                 </div>
 
-                <div>
-                  <label className="text-xs text-text-secondary font-medium">
-                    Mô tả ngắn về sự kiện
+                <div className="space-y-1.5">
+                  <label className="text-[13px] font-medium text-ink-2">
+                    MÃ´ táº£ ngáº¯n
                   </label>
                   <textarea
                     rows={3}
                     value={albumDesc}
                     onChange={(e) => setAlbumDesc(e.target.value)}
-                    placeholder="Mô tả không khí, mục đích và những khoảnh khắc đáng nhớ..."
-                    className="w-full mt-1 px-4 py-2.5 rounded-xl bg-bg-secondary border border-border-subtle text-xs text-text-primary focus:border-accent-blue focus:outline-none"
+                    placeholder="MÃ´ táº£ khÃ´ng khÃ­, má»¥c Ä‘Ã­ch vÃ  nhá»¯ng khoáº£nh kháº¯c Ä‘Ã¡ng nhá»›..."
+                    className={`${inputCls} resize-none`}
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs text-text-secondary font-medium">
-                      Năm học
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-[13px] font-medium text-ink-2">
+                      NÄƒm há»c
                     </label>
-                    <select
+                    <SchoolYearInput
+                      id="album-create-year"
                       value={albumYear}
-                      onChange={(e) => setAlbumYear(e.target.value)}
-                      className="w-full mt-1 px-3 py-2.5 rounded-xl bg-bg-secondary border border-border-subtle text-xs text-text-primary focus:border-accent-blue focus:outline-none"
-                    >
-                      {schoolYears.filter((y) => y !== "Tất cả năm").map((yr) => (
-                        <option key={yr} value={yr}>
-                          {yr}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setAlbumYear}
+                    />
                   </div>
 
-                  <div>
-                    <label className="text-xs text-text-secondary font-medium">
-                      Link thư mục Google Drive gốc (nếu có)
+                  <div className="space-y-1.5">
+                    <label className="text-[13px] font-medium text-ink-2">
+                      Link Google Drive gá»‘c (náº¿u cÃ³)
                     </label>
-                    <div className="relative flex items-center mt-1">
-                      <LinkSimple size={14} className="absolute left-3 text-text-muted" />
+                    <div className="relative">
+                      <LinkSimple
+                        size={14}
+                        className="absolute top-1/2 left-3.5 -translate-y-1/2 text-ink-3"
+                      />
                       <input
                         type="url"
                         value={albumDriveUrl}
                         onChange={(e) => setAlbumDriveUrl(e.target.value)}
                         placeholder="https://drive.google.com/drive/folders/..."
-                        className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-bg-secondary border border-border-subtle text-xs text-text-primary focus:border-accent-blue focus:outline-none"
+                        className={`${inputCls} pl-10`}
                       />
                     </div>
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-xs text-text-secondary font-medium">
-                    Ảnh bìa Album (Cover Photo)
+                <div className="space-y-1.5">
+                  <label className="text-[13px] font-medium text-ink-2">
+                    áº¢nh bÃ¬a Album
                   </label>
                   <input
                     type="file"
                     accept="image/*"
                     onChange={(e) => setAlbumCoverFile(e.target.files?.[0] || null)}
-                    className="w-full mt-1 px-3 py-2 rounded-xl bg-bg-secondary border border-border-subtle text-xs text-text-muted"
+                    className="w-full cursor-pointer rounded-xl border border-line bg-bg px-3.5 py-2.5 text-[12px] text-ink-3 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-surface-2 file:px-3 file:py-1.5 file:text-[12px] file:text-ink"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={albumCreating}
-                  className="w-full py-3 rounded-full bg-accent-blue hover:bg-accent-blue-hover text-white text-xs font-semibold shadow-lg shadow-accent-blue/25 transition-all duration-200 disabled:opacity-50"
+                  className="w-full rounded-full bg-accent py-3 text-[13px] font-semibold text-white transition-colors duration-200 hover:bg-accent-hover disabled:opacity-50"
                 >
-                  {albumCreating ? "Đang tạo album..." : "Lưu Album vào Hệ Thống"}
+                  {albumCreating ? "Äang táº¡o album..." : "LÆ°u Album vÃ o há»‡ thá»‘ng"}
                 </button>
               </form>
             </div>
           </div>
         )}
 
-        {/* TAB 3: SYSTEM CONNECTION STATUS */}
+        {/* TAB: OVERVIEW â€” thá»‘ng kÃª tá»•ng quan há»‡ thá»‘ng */}
+        {activeTab === "overview" && (
+          <div className="mt-8 space-y-6">
+            {/* Tháº» sá»‘ liá»‡u */}
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <div className="rounded-2xl border border-line bg-surface p-5">
+                <p className="text-3xl font-semibold text-ink tabular-nums">
+                  {existingMedia.filter((m) => m.type === "photo").length}
+                </p>
+                <p className="mt-1 text-[12px] text-ink-3">Bá»©c áº£nh</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-surface p-5">
+                <p className="text-3xl font-semibold text-ink tabular-nums">
+                  {existingMedia.filter((m) => m.type === "video").length}
+                </p>
+                <p className="mt-1 text-[12px] text-ink-3">ThÆ°á»›c phim</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-surface p-5">
+                <p className="text-3xl font-semibold text-ink tabular-nums">
+                  {adminAlbums.length}
+                </p>
+                <p className="mt-1 text-[12px] text-ink-3">Album</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-surface p-5">
+                <p className="text-3xl font-semibold text-ink tabular-nums">
+                  {existingMedia.length}
+                </p>
+                <p className="mt-1 text-[12px] text-ink-3">Tá»•ng tÆ° liá»‡u</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              {/* PhÃ¢n bá»‘ chuyÃªn má»¥c */}
+              <div className="rounded-2xl border border-line bg-surface p-6">
+                <h3 className="text-sm font-semibold text-ink">
+                  PhÃ¢n bá»‘ theo chuyÃªn má»¥c
+                </h3>
+                <div className="mt-4 space-y-3">
+                  {categories
+                    .filter((c) => c !== "Tất cả")
+                    .map((cat) => {
+                      const count = existingMedia.filter(
+                        (m) => m.category === cat
+                      ).length;
+                      const percent = existingMedia.length
+                        ? (count / existingMedia.length) * 100
+                        : 0;
+                      return (
+                        <div key={cat}>
+                          <div className="flex items-center justify-between text-[12px]">
+                            <span className="text-ink-2">{cat}</span>
+                            <span className="text-ink-3 tabular-nums">
+                              {count}
+                            </span>
+                          </div>
+                          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
+                            <div
+                              className="h-full rounded-full bg-accent transition-[width] duration-500"
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* Album gáº§n Ä‘Ã¢y nháº¥t */}
+              <div className="rounded-2xl border border-line bg-surface p-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-ink">
+                    Album má»›i nháº¥t
+                  </h3>
+                  <button
+                    onClick={() => setActiveTab("manageAlbum")}
+                    className="text-[12px] font-medium text-accent transition-colors hover:text-accent-hover"
+                  >
+                    Xem táº¥t cáº£ â†’
+                  </button>
+                </div>
+                <div className="mt-4 space-y-2.5">
+                  {loadingAlbums ? (
+                    <p className="py-6 text-center text-[12px] text-ink-3">
+                      Äang táº£i...
+                    </p>
+                  ) : adminAlbums.length === 0 ? (
+                    <p className="py-6 text-center text-[12px] text-ink-3">
+                      ChÆ°a cÃ³ album nÃ o.
+                    </p>
+                  ) : (
+                    adminAlbums.slice(0, 5).map((album) => (
+                      <div
+                        key={album.id}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-line bg-bg px-3.5 py-2.5"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-[12.5px] font-medium text-ink">
+                            {album.title}
+                          </p>
+                          <p className="text-[11px] text-ink-3">
+                            {album.schoolYear} Â· {album.count} tÆ° liá»‡u
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setEditingAlbum(album)}
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-3 transition-colors hover:bg-surface-2 hover:text-accent"
+                          title="Chá»‰nh sá»­a"
+                        >
+                          <PencilSimple size={14} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: MANAGE ALBUM â€” sá»­a / xÃ³a album trá»±c tiáº¿p */}
+        {activeTab === "manageAlbum" && (
+          <div className="mt-8 space-y-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-ink">
+                  Quáº£n lÃ½ Album ({adminAlbums.length})
+                </h2>
+                <p className="mt-0.5 text-[12px] text-ink-3">
+                  Äá»•i tÃªn, mÃ´ táº£, niÃªn khÃ³a, áº£nh bÃ¬a â€” hoáº·c bá»• sung áº£nh vÃ o
+                  album cÃ³ sáºµn.
+                </p>
+              </div>
+              <button
+                onClick={fetchAdminAlbums}
+                disabled={loadingAlbums}
+                className="flex items-center gap-1.5 rounded-full border border-line px-3.5 py-2 text-[12px] font-medium text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+              >
+                <ArrowsClockwise
+                  size={13}
+                  className={loadingAlbums ? "animate-spin" : ""}
+                />
+                <span>LÃ m má»›i</span>
+              </button>
+            </div>
+
+            {deleteMsg && (
+              <div className="flex items-center gap-2 rounded-xl border border-success/30 bg-success-soft px-4 py-3 text-[12px] text-success">
+                <CheckCircle size={15} weight="fill" />
+                <span>{deleteMsg}</span>
+              </div>
+            )}
+
+            {loadingAlbums ? (
+              <div className="rounded-2xl border border-dashed border-line py-16 text-center text-[13px] text-ink-3">
+                Äang táº£i danh sÃ¡ch album...
+              </div>
+            ) : adminAlbums.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-line py-16 text-center text-[13px] text-ink-3">
+                ChÆ°a cÃ³ album nÃ o. Táº¡o album á»Ÿ tab &quot;Táº¡o Album&quot;.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                {adminAlbums.map((album) => (
+                  <div
+                    key={album.id}
+                    className="flex flex-col justify-between gap-3 rounded-xl border border-line bg-surface p-4 transition-colors hover:border-line-strong"
+                  >
+                    <div className="flex gap-3">
+                      <div className="relative h-18 w-18 shrink-0 overflow-hidden rounded-lg border border-line bg-bg">
+                        <img
+                          src={formatSrc(album.cover)}
+                          alt={album.title}
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "/logo.jpg";
+                          }}
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="line-clamp-2 text-[13px] leading-snug font-semibold text-ink">
+                          {album.title}
+                        </h4>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] text-ink-2">
+                            {album.schoolYear}
+                          </span>
+                          <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] text-ink-3">
+                            {album.count} tÆ° liá»‡u
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between border-t border-line pt-2.5">
+                      <button
+                        onClick={() => setEditingAlbum(album)}
+                        className="flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent-soft px-3.5 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:border-accent/50"
+                      >
+                        <PencilSimple size={13} />
+                        <span>Chá»‰nh sá»­a</span>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteAlbum(album)}
+                        className="flex items-center gap-1 rounded-lg border border-danger/30 bg-danger-soft px-3 py-1.5 text-[11px] font-semibold text-danger transition-colors hover:border-danger/50"
+                      >
+                        <Trash size={13} weight="bold" />
+                        <span>XÃ³a</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB: STATUS */}
         {activeTab === "status" && (
-          <div className="mt-8 max-w-3xl mx-auto space-y-6">
-            <div className="rounded-3xl bg-bg-card border border-border-subtle p-6 md:p-8 space-y-6">
-              <h2 className="text-lg font-semibold text-text-primary">
-                Trạng thái cấu hình hạ tầng
+          <div className="mx-auto mt-8 max-w-3xl space-y-5">
+            <div className="space-y-5 rounded-2xl border border-line bg-surface p-6 md:p-8">
+              <h2 className="text-base font-semibold text-ink">
+                Tráº¡ng thÃ¡i cáº¥u hÃ¬nh háº¡ táº§ng
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Supabase Box */}
-                <div className="p-5 rounded-2xl bg-bg-secondary border border-border-subtle space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-sm">Supabase PostgreSQL & Auth</span>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-2.5 rounded-xl border border-line bg-bg p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-ink">
+                      Supabase PostgreSQL & Auth
+                    </span>
                     {isSupabaseConfigured ? (
-                      <span className="flex items-center gap-1 text-xs text-emerald-400">
-                        <CheckCircle size={16} weight="fill" /> Đã kết nối
+                      <span className="flex shrink-0 items-center gap-1 text-[12px] text-success">
+                        <CheckCircle size={15} weight="fill" /> ÄÃ£ káº¿t ná»‘i
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-xs text-accent-gold">
-                        <Warning size={16} weight="fill" /> Chưa điền API Key
+                      <span className="flex shrink-0 items-center gap-1 text-[12px] text-warning">
+                        <Warning size={15} weight="fill" /> ChÆ°a cÃ³ API Key
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-text-muted">
-                    Lưu trữ dữ liệu danh mục, sự kiện, tags và xác thực 3 - 4 tài khoản quản trị viên.
+                  <p className="text-[12px] leading-relaxed text-ink-3">
+                    LÆ°u trá»¯ metadata, album, tags vÃ  xÃ¡c thá»±c tÃ i khoáº£n quáº£n trá»‹
+                    viÃªn.
                   </p>
                 </div>
 
-                {/* S3 PIKAMC Box */}
-                <div className="p-5 rounded-2xl bg-bg-secondary border border-border-subtle space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-sm">PIKAMC S3 Storage (50GB)</span>
+                <div className="space-y-2.5 rounded-xl border border-line bg-bg p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-ink">
+                      PIKAMC S3 Storage (50GB)
+                    </span>
                     {isS3Configured ? (
-                      <span className="flex items-center gap-1 text-xs text-emerald-400">
-                        <CheckCircle size={16} weight="fill" /> Đã cấu hình
+                      <span className="flex shrink-0 items-center gap-1 text-[12px] text-success">
+                        <CheckCircle size={15} weight="fill" /> ÄÃ£ cáº¥u hÃ¬nh
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-xs text-accent-gold">
-                        <Warning size={16} weight="fill" /> Chưa điền S3 Key
+                      <span className="flex shrink-0 items-center gap-1 text-[12px] text-warning">
+                        <Warning size={15} weight="fill" /> ChÆ°a cÃ³ S3 Key
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-text-muted">
-                    Kho lưu trữ file tĩnh S3 trực tiếp qua Presigned URL, bỏ qua giới hạn 4.5MB của Vercel.
+                  <p className="text-[12px] leading-relaxed text-ink-3">
+                    Kho file tÄ©nh qua Presigned URL, bá» qua giá»›i háº¡n 4.5MB cá»§a
+                    Vercel.
                   </p>
                 </div>
               </div>
 
-              {/* Instructions */}
-              <div className="p-5 rounded-2xl bg-white/5 border border-border-subtle space-y-3 text-xs text-text-secondary">
-                <h3 className="font-semibold text-text-primary">
-                  Hướng dẫn cấu hình file `.env.local`:
+              <div className="space-y-3 rounded-xl border border-line bg-bg p-5 text-[12px] leading-relaxed text-ink-2">
+                <h3 className="font-semibold text-ink">
+                  HÆ°á»›ng dáº«n cáº¥u hÃ¬nh `.env.local`:
                 </h3>
-                <ol className="list-decimal list-inside space-y-2 text-text-muted">
+                <ol className="list-inside list-decimal space-y-2 text-ink-3">
                   <li>
-                    Mở file <code className="text-accent-blue font-mono">the-archives/supabase/schema.sql</code> và copy toàn bộ nội dung vào <strong>SQL Editor</strong> trên trang quản trị Supabase rồi bấm Run.
+                    Copy toÃ n bá»™ ná»™i dung{" "}
+                    <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-ink">
+                      the-archives/supabase/schema.sql
+                    </code>{" "}
+                    vÃ o SQL Editor trÃªn Supabase rá»“i Run.
                   </li>
                   <li>
-                    Lấy <strong>URL</strong> và <strong>Anon Key</strong> trên Supabase điền vào <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code> và <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>.
+                    Äiá»n URL vÃ  Anon Key vÃ o{" "}
+                    <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-ink">
+                      NEXT_PUBLIC_SUPABASE_URL
+                    </code>{" "}
+                    vÃ {" "}
+                    <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-ink">
+                      NEXT_PUBLIC_SUPABASE_ANON_KEY
+                    </code>
+                    .
                   </li>
                   <li>
-                    Vào trang <a href="https://one.pikamc.vn" target="_blank" rel="noopener noreferrer" className="text-accent-gold underline">one.pikamc.vn</a>, bấm vào mục <strong>Cài đặt</strong> của gói S3 Starter 50GB để lấy: Endpoint, Access Key, Secret Key, và Bucket Name rồi điền vào <code className="font-mono">.env.local</code>.
+                    Láº¥y Endpoint, Access Key, Secret Key, Bucket Name tá»« gÃ³i S3
+                    Starter 50GB trÃªn{" "}
+                    <a
+                      href="https://one.pikamc.vn"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-ink underline decoration-line-strong underline-offset-2 hover:text-accent"
+                    >
+                      one.pikamc.vn
+                    </a>{" "}
+                    rá»“i Ä‘iá»n vÃ o `.env.local`.
                   </li>
                 </ol>
               </div>
@@ -1000,6 +1275,30 @@ export default function AdminDashboardPage() {
           </div>
         )}
       </main>
+
+      {/* Modal chá»‰nh sá»­a album â€” dÃ¹ng chung tá»« trang chá»§ */}
+      <EditAlbumModal
+        album={editingAlbum}
+        onClose={() => setEditingAlbum(null)}
+        onSaved={() => {
+          fetchAdminAlbums();
+          notifySync();
+        }}
+      />
     </div>
   );
+}
+
+function formatSrc(src: string): string {
+  if (!src) return "/logo.jpg";
+  if (src.includes("s3.pikamc.vn")) {
+    const parts = src.split("s3.pikamc.vn/")[1];
+    if (parts) {
+      const slashIdx = parts.indexOf("/");
+      if (slashIdx !== -1) {
+        return `/api/media/${parts.substring(slashIdx + 1)}`;
+      }
+    }
+  }
+  return src;
 }

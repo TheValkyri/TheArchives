@@ -1,8 +1,10 @@
-"use client";
+﻿"use client";
 
-import { motion, useReducedMotion } from "motion/react";
+import { useEffect, useRef } from "react";
 import Image from "next/image";
-import { Play, Eye, DownloadSimple } from "@phosphor-icons/react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { Play } from "@phosphor-icons/react";
 import type { MediaItem } from "@/lib/data";
 
 interface GalleryCardProps {
@@ -12,7 +14,47 @@ interface GalleryCardProps {
 }
 
 export function GalleryCard({ item, index, onClick }: GalleryCardProps) {
-  const reduce = useReducedMotion();
+  const root = useRef<HTMLElement>(null);
+
+  // Vào view: phóng từ 0.92 lên 1. Ra khỏi view: mờ dần.
+  useEffect(() => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return;
+
+    gsap.registerPlugin(ScrollTrigger);
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        root.current,
+        { scale: 0.92, opacity: 0.35 },
+        {
+          scale: 1,
+          opacity: 1,
+          duration: 0.7,
+          delay: (index % 4) * 0.05,
+          ease: "power4.out",
+          scrollTrigger: {
+            trigger: root.current,
+            start: "top 92%",
+            once: true,
+          },
+        }
+      );
+
+      gsap.to(root.current, {
+        opacity: 0.25,
+        scale: 0.96,
+        ease: "none",
+        scrollTrigger: {
+          trigger: root.current,
+          start: "top -8%",
+          end: "top -45%",
+          scrub: 0.6,
+        },
+      });
+    }, root);
+
+    return () => ctx.revert();
+  }, [index]);
 
   const aspectClass =
     item.aspect === "portrait"
@@ -22,18 +64,10 @@ export function GalleryCard({ item, index, onClick }: GalleryCardProps) {
         : "aspect-[4/3]";
 
   return (
-    <motion.article
-      layoutId={`media-card-${item.id}`}
+    <article
+      ref={root}
       onClick={onClick}
-      initial={reduce ? false : { opacity: 0, y: 24 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.15 }}
-      transition={{
-        duration: 0.6,
-        delay: (index % 4) * 0.05,
-        ease: [0.16, 1, 0.3, 1],
-      }}
-      className={`group relative overflow-hidden rounded-2xl bg-bg-card cursor-pointer border border-border-subtle hover:border-border-hover transition-all duration-300 p-1 ${aspectClass}`}
+      className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-line bg-surface transition-colors duration-300 hover:border-line-strong ${aspectClass}`}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -44,56 +78,32 @@ export function GalleryCard({ item, index, onClick }: GalleryCardProps) {
       }}
       aria-label={`Xem chi tiết ${item.title}`}
     >
-      <div className="relative w-full h-full rounded-[calc(1rem-2px)] overflow-hidden bg-bg-secondary">
-        <Image
-          src={item.src}
-          alt={item.title}
-          fill
-          unoptimized
-          className="object-cover transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:scale-105"
-          sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
-        />
+      <Image
+        src={item.src}
+        alt={item.title}
+        fill
+        unoptimized
+        className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+      />
 
-        {/* Gradient Scrim */}
-        <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/90 via-bg-primary/20 to-transparent opacity-60 group-hover:opacity-100 transition-opacity duration-300" />
+      <span className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
 
-        {/* Top Badges */}
-        <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-          <span className="px-2.5 py-1 rounded-full text-[10px] font-mono uppercase tracking-wider bg-bg-primary/80 backdrop-blur-md text-text-primary border border-white/10">
-            {item.category}
-          </span>
+      {item.type === "video" && (
+        <span className="absolute top-2.5 left-2.5 flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold tracking-wide text-white uppercase">
+          <Play size={9} weight="fill" />
+          Video
+        </span>
+      )}
 
-          {item.type === "video" ? (
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-accent-red text-white text-[10px] font-semibold tracking-wider uppercase shadow-md">
-              <Play size={10} weight="fill" />
-              <span>Video</span>
-            </div>
-          ) : (
-            <span className="text-[10px] font-mono text-text-muted bg-bg-primary/80 backdrop-blur-md px-2 py-0.5 rounded">
-              {item.schoolYear}
-            </span>
-          )}
-        </div>
-
-        {/* Center Hover Action Cue */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
-          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-accent-blue/90 text-white backdrop-blur-md text-xs font-medium shadow-xl transform scale-90 group-hover:scale-100 transition-transform duration-300">
-            <Eye size={16} weight="bold" />
-            <span>Xem chi tiết & Tải ảnh</span>
-          </div>
-        </div>
-
-        {/* Bottom Details */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-1 group-hover:translate-y-0 transition-transform duration-300">
-          <p className="text-sm font-medium text-text-primary leading-snug group-hover:text-white transition-colors duration-200 line-clamp-2">
-            {item.title}
-          </p>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-text-muted">
-            <span>{item.photographer}</span>
-            <span className="font-mono text-text-secondary">{item.date}</span>
-          </div>
-        </div>
-      </div>
-    </motion.article>
+      <span className="absolute inset-x-0 bottom-0 translate-y-1 p-3 transition-transform duration-300 group-hover:translate-y-0">
+        <span className="block truncate text-[13px] font-medium text-white">
+          {item.title}
+        </span>
+        <span className="mt-0.5 block text-[11px] text-white/70">
+          {item.photographer} · {item.date}
+        </span>
+      </span>
+    </article>
   );
 }

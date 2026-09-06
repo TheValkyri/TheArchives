@@ -39,6 +39,8 @@ export const categories = [
 
 export const schoolYears = [
   "Tất cả năm",
+  "2026 - 2027",
+  "2025 - 2026",
   "2024 - 2025",
   "2023 - 2024",
 ] as const;
@@ -166,13 +168,30 @@ export async function getLiveAlbums(): Promise<Album[]> {
 
     if (error || !data) return [];
 
+    // Đếm số tư liệu thuộc từng album theo album_id
+    const { data: mediaData, error: mediaError } = await supabase
+      .from("media_items")
+      .select("album_id");
+
+    const countByAlbum = new Map<string, number>();
+    if (!mediaError && mediaData) {
+      for (const row of mediaData) {
+        if (row.album_id) {
+          countByAlbum.set(
+            row.album_id,
+            (countByAlbum.get(row.album_id) || 0) + 1
+          );
+        }
+      }
+    }
+
     return data.map((album) => ({
       id: album.id,
       title: album.title,
       description: album.description || "",
       schoolYear: album.school_year,
       cover: formatMediaSrc(album.cover_url),
-      count: 0,
+      count: countByAlbum.get(album.id) || 0,
       driveFolderUrl: album.drive_folder_url || undefined,
     }));
   } catch {

@@ -12,7 +12,11 @@ const socialLinks = [
   { icon: FacebookLogo, href: "https://facebook.com", label: "Fanpage Đoàn Trường" },
   { icon: InstagramLogo, href: "https://instagram.com", label: "Instagram CLB" },
   { icon: YoutubeLogo, href: "https://youtube.com", label: "Kênh YouTube" },
-  { icon: EnvelopeSimple, href: "mailto:clbtruyenthong.thptvinhthuan@gmail.com", label: "Email liên hệ" },
+  {
+    icon: EnvelopeSimple,
+    href: "mailto:clbtruyenthong.thptvinhthuan@gmail.com",
+    label: "Email liên hệ",
+  },
 ];
 
 const quickLinks = [
@@ -23,44 +27,46 @@ const quickLinks = [
 
 export function Footer() {
   return (
-    <footer className="border-t border-border-subtle bg-bg-primary/95 relative z-10">
-      <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-16 md:py-20">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-12">
-          {/* Brand Column */}
-          <div className="md:col-span-5 space-y-4">
+    <footer className="border-t border-line bg-surface/50">
+      <div className="mx-auto max-w-6xl px-4 py-14 md:px-6">
+        <div className="grid grid-cols-1 gap-10 md:grid-cols-12">
+          {/* Brand */}
+          <div className="space-y-4 md:col-span-5">
             <div className="flex items-center gap-3">
-              <div className="relative w-12 h-12 rounded-full overflow-hidden ring-2 ring-accent-blue/30 shadow-md">
+              <span className="relative block h-11 w-11 overflow-hidden rounded-full ring-1 ring-line-strong">
                 <Image
                   src="/logo.jpg"
                   alt="Logo Trường THPT Vĩnh Thuận"
                   fill
                   className="object-cover"
-                  sizes="48px"
+                  sizes="44px"
                 />
-              </div>
+              </span>
               <div>
-                <span className="font-mono text-xs uppercase tracking-[0.14em] text-text-primary font-semibold">
+                <p className="text-sm font-semibold tracking-tight text-ink">
                   The Archives
-                </span>
-                <p className="text-xs text-accent-blue font-medium">
+                </p>
+                <p className="text-[11px] text-ink-3">
                   CLB Truyền Thông · Đoàn Trường THPT Vĩnh Thuận
                 </p>
               </div>
             </div>
-
-            <p className="text-sm text-text-muted leading-relaxed max-w-[42ch]">
-              Hệ thống lưu trữ và tra cứu hình ảnh, video chất lượng cao phục vụ công tác truyền thông, kỷ yếu và phong trào thanh niên trường THPT Vĩnh Thuận.
+            <p className="max-w-[42ch] text-[13px] leading-relaxed text-ink-3">
+              Hệ thống lưu trữ và tra cứu hình ảnh, video chất lượng cao phục
+              vụ công tác truyền thông, kỷ yếu và phong trào thanh niên trường
+              THPT Vĩnh Thuận.
             </p>
-
-            <div className="flex items-center gap-2 text-xs text-text-muted pt-1">
-              <MapPin size={15} weight="light" className="text-accent-red shrink-0" />
-              <span>Thị trấn Vĩnh Thuận, Huyện Vĩnh Thuận, Tỉnh Kiên Giang</span>
-            </div>
+            <p className="flex items-center gap-2 text-[12px] text-ink-3">
+              <MapPin size={14} className="shrink-0 text-ink-3" />
+              <span>
+                Thị trấn Vĩnh Thuận, Huyện Vĩnh Thuận, Tỉnh Kiên Giang
+              </span>
+            </p>
           </div>
 
-          {/* Quick Links Column */}
-          <div className="md:col-span-3 space-y-3">
-            <h3 className="text-xs font-mono uppercase tracking-wider text-text-primary font-semibold">
+          {/* Links */}
+          <div className="space-y-3 md:col-span-3">
+            <h3 className="text-[11px] font-semibold tracking-widest text-ink uppercase">
               Mục tra cứu
             </h3>
             <ul className="space-y-2.5">
@@ -68,7 +74,7 @@ export function Footer() {
                 <li key={link.href}>
                   <a
                     href={link.href}
-                    className="text-sm text-text-muted hover:text-accent-blue transition-colors duration-200"
+                    className="text-[13px] text-ink-3 transition-colors duration-200 hover:text-ink"
                   >
                     {link.label}
                   </a>
@@ -77,15 +83,12 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Social Channels Column */}
-          <div className="md:col-span-4 space-y-3">
-            <h3 className="text-xs font-mono uppercase tracking-wider text-text-primary font-semibold">
+          {/* Social */}
+          <div className="space-y-3 md:col-span-4">
+            <h3 className="text-[11px] font-semibold tracking-widest text-ink uppercase">
               Kênh truyền thông
             </h3>
-            <p className="text-xs text-text-muted">
-              Theo dõi các bản tin thời sự, phóng sự và hình ảnh hoạt động mới nhất.
-            </p>
-            <div className="flex gap-2.5 pt-1">
+            <div className="flex gap-2">
               {socialLinks.map((social) => (
                 <a
                   key={social.label}
@@ -93,24 +96,24 @@ export function Footer() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={social.label}
-                  className="flex items-center justify-center w-10 h-10 rounded-full bg-bg-card hover:bg-white/10 border border-border-subtle hover:border-accent-blue/40 text-text-secondary hover:text-white transition-all duration-200 active:scale-95"
                   title={social.label}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-bg text-ink-2 transition-[background-color,border-color,color] duration-200 hover:border-line-strong hover:text-ink active:scale-95"
                 >
-                  <social.icon size={18} weight="light" />
+                  <social.icon size={17} />
                 </a>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Bottom copyright */}
-        <div className="mt-16 pt-6 border-t border-border-subtle flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-text-muted">
+        <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t border-line pt-6 text-[12px] text-ink-3 sm:flex-row">
           <p>
-            &copy; {new Date().getFullYear()} Đoàn TNCS Hồ Chí Minh - Trường THPT Vĩnh Thuận.
+            &copy; {new Date().getFullYear()} Đoàn TNCS Hồ Chí Minh — Trường
+            THPT Vĩnh Thuận.
           </p>
-          <p className="flex items-center gap-1">
+          <p className="flex items-center gap-1.5">
             <span>Xây dựng với nhiệt huyết tuổi trẻ</span>
-            <Heart size={13} weight="fill" className="text-accent-red" />
+            <Heart size={12} weight="fill" className="text-danger" />
           </p>
         </div>
       </div>

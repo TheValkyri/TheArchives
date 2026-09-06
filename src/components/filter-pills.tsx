@@ -1,6 +1,5 @@
 "use client";
 
-import { motion, useReducedMotion } from "motion/react";
 import { categories } from "@/lib/data";
 
 interface FilterPillsProps {
@@ -9,34 +8,25 @@ interface FilterPillsProps {
 }
 
 export function FilterPills({ active, onChange }: FilterPillsProps) {
-  const reduce = useReducedMotion();
-
   return (
-    <div className="flex flex-wrap gap-2">
-      {categories.map((cat) => (
-        <button
-          key={cat}
-          onClick={() => onChange(cat)}
-          className={`relative px-4 py-2 rounded-full text-sm font-medium transition-colors duration-300 ${
-            active === cat
-              ? "text-white"
-              : "text-text-secondary hover:text-text-primary bg-white/5 hover:bg-white/8"
-          }`}
-        >
-          {active === cat && (
-            <motion.div
-              layoutId={reduce ? undefined : "filter-pill"}
-              className="absolute inset-0 rounded-full bg-accent-red"
-              transition={{
-                type: "spring",
-                stiffness: 380,
-                damping: 30,
-              }}
-            />
-          )}
-          <span className="relative z-10">{cat}</span>
-        </button>
-      ))}
+    <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 py-1">
+      {categories.map((cat) => {
+        const isActive = active === cat;
+        return (
+          <button
+            key={cat}
+            onClick={() => onChange(cat)}
+            aria-pressed={isActive}
+            className={`shrink-0 rounded-full px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors duration-200 ${
+              isActive
+                ? "bg-accent text-white"
+                : "bg-surface-2 text-ink-2 hover:bg-line hover:text-ink"
+            }`}
+          >
+            {cat}
+          </button>
+        );
+      })}
     </div>
   );
 }

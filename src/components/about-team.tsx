@@ -1,125 +1,165 @@
 "use client";
 
-import { motion, useReducedMotion } from "motion/react";
-import { Camera, FilmSlate, Palette, PenNib, Sparkle, UsersThree } from "@phosphor-icons/react";
+import { useEffect, useRef } from "react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { Camera, FilmSlate, Palette, PenNib } from "@phosphor-icons/react";
 
-const teamRoles = [
+/**
+ * Đội ngũ — sticky card stacking.
+ * Tiêu đề ghim trái, 4 thẻ vai trò bên phải chồng dần lên nhau khi cuộn,
+ * mỗi thẻ xếp chồng với scale nhẹ tạo chiều sâu.
+ */
+
+const roles = [
   {
     icon: Camera,
+    num: "01",
     title: "Nhiếp ảnh & Flycam",
-    desc: "Bắt trọn từng khoảnh khắc cảm xúc, góc chụp toàn cảnh sân trường và các hoạt động phong trào Đoàn.",
-    color: "text-accent-blue",
-    badge: "Sony · Canon · DJI",
+    desc: "Bắt trọn từng khoảnh khắc cảm xúc và góc chụp toàn cảnh của các hoạt động phong trào Đoàn.",
   },
   {
     icon: FilmSlate,
+    num: "02",
     title: "Quay phim & Dựng phim",
-    desc: "Sản xuất video recap sự kiện, phóng sự chuyên đề và các thước phim ngắn kỷ niệm học đường.",
-    color: "text-accent-red",
-    badge: "4K UHD · 60 FPS",
+    desc: "Sản xuất video recap sự kiện, phóng sự chuyên đề và thước phim ngắn kỷ niệm học đường.",
   },
   {
     icon: Palette,
+    num: "03",
     title: "Hậu kỳ & Thiết kế",
-    desc: "Chỉnh màu đồng bộ, thiết kế poster, banner sự kiện và tối ưu hình ảnh xuất bản trên các nền tảng số.",
-    color: "text-accent-gold",
-    badge: "Lightroom · Photoshop",
+    desc: "Chỉnh màu đồng bộ, thiết kế poster, banner và tối ưu hình ảnh trước khi xuất bản.",
   },
   {
     icon: PenNib,
+    num: "04",
     title: "Biên tập & Xuất bản",
-    desc: "Viết bài truyền thông, quản trị nội dung fanpage Đoàn trường và lưu trữ dữ liệu khoa học.",
-    color: "text-emerald-400",
-    badge: "BCH Đoàn Trường",
+    desc: "Viết bài truyền thông, quản trị nội dung fanpage và lưu trữ dữ liệu khoa học.",
   },
 ];
 
 export function AboutTeam() {
-  const reduce = useReducedMotion();
+  const root = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return;
+
+    gsap.registerPlugin(ScrollTrigger);
+    const ctx = gsap.context(() => {
+      // Thẻ sau chồng lên thẻ trước, scale nhẹ + trượt lên
+      gsap.utils.toArray<HTMLElement>("[data-stack-card]").forEach((card, i) => {
+        if (i === 0) return;
+        gsap.fromTo(
+          card,
+          { y: 60, scale: 0.96 },
+          {
+            y: 0,
+            scale: 1,
+            ease: "none",
+            scrollTrigger: {
+              trigger: card,
+              start: "top 88%",
+              end: "top 62%",
+              scrub: 0.7,
+            },
+          }
+        );
+      });
+
+      // Số lớn mờ trôi ngược chiều nhẹ
+      gsap.utils.toArray<HTMLElement>("[data-stack-num]").forEach((num) => {
+        gsap.fromTo(
+          num,
+          { yPercent: 30 },
+          {
+            yPercent: -18,
+            ease: "none",
+            scrollTrigger: {
+              trigger: num,
+              start: "top bottom",
+              end: "bottom top",
+              scrub: 1,
+            },
+          }
+        );
+      });
+    }, root);
+
+    return () => ctx.revert();
+  }, []);
 
   return (
-    <section id="about" className="py-24 md:py-32 bg-bg-secondary/40 border-t border-border-subtle relative">
-      <div className="max-w-[1400px] mx-auto px-4 md:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-start">
-          {/* Left Column: Intro */}
-          <div className="lg:col-span-5 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent-blue/10 border border-accent-blue/30">
-              <Sparkle size={13} weight="fill" className="text-accent-gold" />
-              <span className="text-[11px] font-mono uppercase tracking-wider text-accent-blue font-semibold">
-                ĐỘI NGŨ TÁC NGHIỆP
-              </span>
-            </div>
+    <section
+      id="about"
+      ref={root}
+      className="scroll-mt-24 border-t border-line py-32 md:py-48"
+      aria-label="Về CLB Truyền Thông"
+    >
+      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-14 px-4 md:px-6 lg:grid-cols-2 lg:gap-20">
+        {/* Cột trái: sticky heading + intro */}
+        <div className="lg:sticky lg:top-28 lg:self-start">
+          <p className="text-[12px] font-medium tracking-[0.28em] text-accent uppercase">
+            Đội ngũ tác nghiệp
+          </p>
+          <h2 className="font-display mt-4 text-4xl leading-[1.05] font-semibold tracking-[-0.02em] text-ink md:text-5xl">
+            Bốn mảng chuyên môn,
+            <br />
+            một <span className="text-accent">tinh thần</span> chung
+          </h2>
+          <p className="mt-6 max-w-[44ch] text-[15px] leading-relaxed text-ink-2">
+            Trực thuộc Ban Chấp Hành Đoàn Trường THPT Vĩnh Thuận, CLB Truyền
+            Thông phụ trách toàn bộ công tác ghi hình, sản xuất tư liệu và
+            xây dựng hình ảnh phong trào thanh niên nhà trường.
+          </p>
+          <p className="mt-4 max-w-[44ch] text-[15px] leading-relaxed text-ink-2">
+            Với tinh thần xung kích của tuổi trẻ, chúng tôi không chỉ chụp ảnh
+            — chúng tôi giữ lại những ký ức đẹp nhất dưới mái trường Vĩnh
+            Thuận thân thương.
+          </p>
+          <p className="mt-8 border-t border-line pt-5 font-mono text-[12px] text-ink-3">
+            18 thành viên thường trực qua các niên khóa
+          </p>
+        </div>
 
-            <motion.h2
-              initial={reduce ? false : { opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-              className="text-3xl md:text-5xl tracking-tighter font-semibold text-text-primary leading-tight"
+        {/* Cột phải: card stacking */}
+        <div className="relative space-y-6 lg:space-y-0">
+          {roles.map((role, i) => (
+            <div
+              key={role.num}
+              data-stack-card
+              className={`relative overflow-hidden rounded-3xl border border-line bg-surface p-7 md:p-8 lg:sticky ${
+                i === 0
+                  ? "lg:top-28"
+                  : i === 1
+                    ? "lg:top-[9.5rem]"
+                    : i === 2
+                      ? "lg:top-[17rem]"
+                      : "lg:top-[24.5rem]"
+              }`}
             >
-              CLB Truyền Thông <br />
-              <span className="text-accent-blue font-normal">Đoàn Trường</span>
-            </motion.h2>
-
-            <motion.div
-              initial={reduce ? false : { opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{
-                duration: 0.6,
-                delay: 0.1,
-                ease: [0.16, 1, 0.3, 1],
-              }}
-              className="space-y-4 text-text-secondary text-sm leading-relaxed"
-            >
-              <p>
-                Trực thuộc Ban Chấp Hành Đoàn Trường THPT Vĩnh Thuận, CLB Truyền Thông là lực lượng nòng cốt phụ trách toàn bộ công tác ghi hình, sản xuất tư liệu và xây dựng hình ảnh phong trào thanh niên nhà trường.
-              </p>
-              <p>
-                Với tinh thần xung kích và lòng nhiệt huyết của tuổi trẻ, chúng tôi không chỉ chụp ảnh mà còn giữ lại những ký ức đẹp nhất dưới mái trường Vĩnh Thuận thân thương.
-              </p>
-            </motion.div>
-
-            <div className="pt-2 flex items-center gap-3 text-xs text-text-muted">
-              <UsersThree size={16} weight="light" className="text-accent-gold" />
-              <span>18 thành viên hoạt động thường trực qua các niên khóa</span>
-            </div>
-          </div>
-
-          {/* Right Column: 4 Division Cards */}
-          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {teamRoles.map((role, i) => (
-              <motion.div
-                key={role.title}
-                initial={reduce ? false : { opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.2 }}
-                transition={{
-                  duration: 0.5,
-                  delay: i * 0.08,
-                  ease: [0.16, 1, 0.3, 1],
-                }}
-                className="rounded-2xl bg-bg-card border border-border-subtle hover:border-border-hover p-6 space-y-3 transition-all duration-300 group"
+              {/* Số lớn nền — parallax ngược */}
+              <span
+                data-stack-num
+                aria-hidden="true"
+                className="font-display pointer-events-none absolute -top-6 right-4 text-[7rem] leading-none font-bold text-ink/[0.05] select-none dark:text-ink/10"
               >
-                <div className="flex items-center justify-between">
-                  <div className={`w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center ${role.color}`}>
-                    <role.icon size={22} weight="light" />
-                  </div>
-                  <span className="text-[10px] font-mono text-text-muted px-2 py-0.5 rounded bg-bg-secondary border border-border-subtle">
-                    {role.badge}
-                  </span>
-                </div>
+                {role.num}
+              </span>
 
-                <h3 className="text-base font-semibold text-text-primary group-hover:text-white transition-colors duration-200">
+              <div className="relative">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
+                  <role.icon size={22} weight="duotone" />
+                </div>
+                <h3 className="font-display mt-5 text-xl font-semibold tracking-tight text-ink">
                   {role.title}
                 </h3>
-
-                <p className="text-xs text-text-muted leading-relaxed">
+                <p className="mt-2.5 max-w-[40ch] text-[14px] leading-relaxed text-ink-3">
                   {role.desc}
                 </p>
-              </motion.div>
-            ))}
-          </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </section>

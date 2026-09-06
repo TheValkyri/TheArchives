@@ -1,10 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3Client, isS3Configured } from "@/lib/s3";
+import { requireAdmin } from "@/lib/auth-guard";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
+    // Chặn request chưa đăng nhập — không thể upload file trái phép
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
+
     if (!isS3Configured || !s3Client) {
       return NextResponse.json(
         {
