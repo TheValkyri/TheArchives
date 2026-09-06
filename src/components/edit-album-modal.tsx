@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
@@ -18,7 +18,7 @@ import { SchoolYearInput } from "./school-year-input";
 interface EditAlbumModalProps {
   album: Album | null;
   onClose: () => void;
-  onSaved: () => void; // gá»i láº¡i Ä‘á»ƒ parent refresh danh sÃ¡ch
+  onSaved: () => void; // gọi lại để parent refresh danh sách
 }
 
 const inputCls =
@@ -35,16 +35,16 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // áº¢nh trong album + upload thÃªm
+  // Ảnh trong album + upload thêm
   const [albumMedia, setAlbumMedia] = useState<MediaItem[]>([]);
   const [loadingMedia, setLoadingMedia] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const addFilesRef = useRef<HTMLInputElement>(null);
 
-  /* Reset state khi má»Ÿ modal vá»›i album khÃ¡c â€” pattern "adjust state during
-     render" (React chÃ­nh thá»©c): so sÃ¡nh prop qua state prev, khÃ´ng cáº§n effect.
-     Fetch danh sÃ¡ch tÆ° liá»‡u bá»c qua microtask. */
+  /* Reset state khi mở modal với album khác â€” pattern "adjust state during
+     render" (React chính thức): so sánh prop qua state prev, không cần effect.
+     Fetch danh sách tư liệu bọc qua microtask. */
   const [lastAlbumId, setLastAlbumId] = useState<string | null>(null);
   if (album && album.id !== lastAlbumId) {
     setLastAlbumId(album.id);
@@ -60,7 +60,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
     void Promise.resolve().then(() => fetchAlbumMedia());
   }
 
-  /* Esc Ä‘Ã³ng modal */
+  /* Esc đóng modal */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -69,7 +69,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  /* KhoÃ¡ scroll ná»n khi má»Ÿ */
+  /* Khoá scroll nền khi mở */
   useEffect(() => {
     document.documentElement.style.overflow = album ? "hidden" : "";
     return () => {
@@ -77,7 +77,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
     };
   }, [album]);
 
-  /* Láº¥y danh sÃ¡ch tÆ° liá»‡u thuá»™c album â€” async wrapper, setState trong callback */
+  /* Lấy danh sách tư liệu thuộc album â€” async wrapper, setState trong callback */
   const fetchAlbumMedia = useCallback(async () => {
     if (!album || !supabase) return;
     setLoadingMedia(true);
@@ -108,7 +108,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
         );
       }
     } catch {
-      // im láº·ng â€” modal váº«n dÃ¹ng Ä‘Æ°á»£c cÃ¡c chá»©c nÄƒng khÃ¡c
+      // im lặng â€” modal vẫn dùng được các chức năng khác
     } finally {
       setLoadingMedia(false);
     }
@@ -119,11 +119,11 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
     if (file) setCoverPreview(URL.createObjectURL(file));
   };
 
-  /* LÆ°u thay Ä‘á»•i metadata + áº£nh bÃ¬a má»›i (náº¿u cÃ³) */
+  /* Lưu thay đổi metadata + ảnh bìa mới (nếu có) */
   const handleSave = async () => {
     if (!album || !supabase) return;
     if (!title.trim()) {
-      setMessage({ ok: false, text: "TÃªn album khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng." });
+      setMessage({ ok: false, text: "Tên album không được để trống." });
       return;
     }
 
@@ -132,7 +132,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
     try {
       let coverUrl: string | undefined;
 
-      // Upload áº£nh bÃ¬a má»›i qua presign náº¿u cÃ³
+      // Upload ảnh bìa mới qua presign nếu có
       if (coverFile) {
         const presignRes = await authedFetch("/api/upload/presign", {
           method: "POST",
@@ -170,17 +170,17 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
 
       if (error) throw error;
 
-      setMessage({ ok: true, text: "ÄÃ£ lÆ°u thay Ä‘á»•i album." });
+      setMessage({ ok: true, text: "Đã lưu thay đổi album." });
       onSaved();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "LÆ°u tháº¥t báº¡i";
+      const msg = err instanceof Error ? err.message : "Lưu thất bại";
       setMessage({ ok: false, text: msg });
     } finally {
       setSaving(false);
     }
   };
 
-  /* Bá»• sung áº£nh vÃ o album: upload S3 â†’ insert DB vá»›i album_id */
+  /* Bổ sung ảnh vào album: upload S3 â†’ insert DB với album_id */
   const handleAddFiles = async (files: FileList | null) => {
     if (!files || !album || !supabase) return;
     setUploading(true);
@@ -211,34 +211,34 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
         const { error: dbError } = await supabase.from("media_items").insert({
           album_id: album.id,
           title: file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " "),
-          category: "Sá»± kiá»‡n",
+          category: "Sự kiện",
           school_year: schoolYear,
           date: new Date().toLocaleDateString("vi-VN"),
           type: isVideo ? "video" : "photo",
           aspect: "landscape",
           src: publicUrl,
-          photographer: "CLB Truyá»n ThÃ´ng",
+          photographer: "CLB Truyền Thông",
           resolution: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
           tags: [],
         });
         if (dbError) throw dbError;
         okCount++;
       } catch {
-        // bá» qua file lá»—i, tiáº¿p tá»¥c file káº¿
+        // bỏ qua file lỗi, tiếp tục file kế
       }
     }
 
     setUploading(false);
     if (okCount > 0) {
-      setMessage({ ok: true, text: `ÄÃ£ thÃªm ${okCount} tÆ° liá»‡u vÃ o album.` });
+      setMessage({ ok: true, text: `Đã thêm ${okCount} tư liệu vào album.` });
       fetchAlbumMedia();
       onSaved();
     } else {
-      setMessage({ ok: false, text: "KhÃ´ng thá»ƒ táº£i lÃªn tÆ° liá»‡u má»›i." });
+      setMessage({ ok: false, text: "Không thể tải lên tư liệu mới." });
     }
   };
 
-  /* XÃ³a album (áº£nh trong album chá»‰ bá» liÃªn káº¿t â€” ON DELETE SET NULL) */
+  /* Xóa album (ảnh trong album chỉ bỏ liên kết â€” ON DELETE SET NULL) */
   const handleDeleteAlbum = async () => {
     if (!album || !supabase) return;
     setSaving(true);
@@ -248,7 +248,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
       onSaved();
       onClose();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "XÃ³a album tháº¥t báº¡i";
+      const msg = err instanceof Error ? err.message : "Xóa album thất bại";
       setMessage({ ok: false, text: msg });
     } finally {
       setSaving(false);
@@ -266,7 +266,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
           className="fixed inset-0 z-100 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md"
           role="dialog"
           aria-modal="true"
-          aria-label={`Chá»‰nh sá»­a album ${album.title}`}
+          aria-label={`Chỉnh sửa album ${album.title}`}
           onClick={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
@@ -282,7 +282,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
             <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-4">
               <div className="min-w-0">
                 <p className="text-[11px] font-medium tracking-widest text-accent uppercase">
-                  Chá»‰nh sá»­a album
+                  Chỉnh sửa album
                 </p>
                 <h3 className="truncate text-[15px] font-semibold text-ink">
                   {album.title}
@@ -291,7 +291,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
               <button
                 onClick={onClose}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink transition-colors hover:bg-line"
-                aria-label="ÄÃ³ng"
+                aria-label="Đóng"
               >
                 <X size={17} />
               </button>
@@ -316,11 +316,11 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
                 </div>
               )}
 
-              {/* TÃªn + mÃ´ táº£ */}
+              {/* Tên + mô tả */}
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-[12px] font-medium text-ink-2">
-                    TÃªn Album
+                    Tên Album
                   </label>
                   <input
                     type="text"
@@ -332,13 +332,13 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
 
                 <div className="space-y-1.5">
                   <label className="text-[12px] font-medium text-ink-2">
-                    MÃ´ táº£
+                    Mô tả
                   </label>
                   <textarea
                     rows={2}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="MÃ´ táº£ ngáº¯n vá» sá»± kiá»‡n..."
+                    placeholder="Mô tả ngắn về sự kiện..."
                     className={`${inputCls} resize-none`}
                   />
                 </div>
@@ -346,7 +346,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <label className="text-[12px] font-medium text-ink-2">
-                      NiÃªn khÃ³a / NÄƒm há»c
+                      Niên khóa / Năm học
                     </label>
                     <SchoolYearInput
                       id="modal-school-year"
@@ -357,7 +357,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
 
                   <div className="space-y-1.5">
                     <label className="text-[12px] font-medium text-ink-2">
-                      Link Google Drive gá»‘c
+                      Link Google Drive gốc
                     </label>
                     <input
                       type="url"
@@ -370,16 +370,16 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
                 </div>
               </div>
 
-              {/* áº¢nh bÃ¬a */}
+              {/* Ảnh bìa */}
               <div className="space-y-1.5">
                 <label className="text-[12px] font-medium text-ink-2">
-                  áº¢nh bÃ¬a
+                  Ảnh bìa
                 </label>
                 <div className="flex items-center gap-4">
                   <div className="relative h-16 w-28 shrink-0 overflow-hidden rounded-lg border border-line bg-surface">
                     <Image
                       src={coverPreview || album.cover}
-                      alt="áº¢nh bÃ¬a album"
+                      alt="Ảnh bìa album"
                       fill
                       unoptimized
                       className="object-cover"
@@ -395,15 +395,15 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
                 </div>
               </div>
 
-              {/* Bá»• sung áº£nh vÃ o album */}
+              {/* Bổ sung ảnh vào album */}
               <div className="space-y-2.5 rounded-xl border border-dashed border-line bg-surface/60 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-[12.5px] font-semibold text-ink">
-                      TÆ° liá»‡u trong album ({albumMedia.length})
+                      Tư liệu trong album ({albumMedia.length})
                     </p>
                     <p className="text-[11px] text-ink-3">
-                      Bá»• sung áº£nh / video má»›i â€” tá»± Ä‘á»™ng gÃ¡n vÃ o album nÃ y.
+                      Bổ sung ảnh / video mới â€” tự động gán vào album này.
                     </p>
                   </div>
                   <button
@@ -416,7 +416,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
                     ) : (
                       <UploadSimple size={13} weight="bold" />
                     )}
-                    ThÃªm áº£nh
+                    Thêm ảnh
                   </button>
                   <input
                     ref={addFilesRef}
@@ -434,11 +434,11 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
                 {loadingMedia ? (
                   <div className="flex items-center justify-center gap-2 py-4 text-[12px] text-ink-3">
                     <SpinnerGap size={14} className="animate-spin" />
-                    Äang táº£i danh sÃ¡ch...
+                    Đang tải danh sách...
                   </div>
                 ) : albumMedia.length === 0 ? (
                   <p className="py-2 text-center text-[12px] text-ink-3">
-                    Album chÆ°a cÃ³ tÆ° liá»‡u nÃ o.
+                    Album chưa có tư liệu nào.
                   </p>
                 ) : (
                   <div className="grid max-h-40 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
@@ -462,27 +462,27 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
                 )}
               </div>
 
-              {/* VÃ¹ng xÃ³a â€” 2 bÆ°á»›c xÃ¡c nháº­n */}
+              {/* Vùng xóa â€” 2 bước xác nhận */}
               <div className="rounded-xl border border-danger/25 bg-danger-soft/50 p-4">
                 {!confirmDelete ? (
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-[12px] text-ink-2">
-                      XÃ³a album khá»i há»‡ thá»‘ng (tÆ° liá»‡u váº«n Ä‘Æ°á»£c giá»¯, chá»‰ bá» liÃªn
-                      káº¿t).
+                      Xóa album khỏi hệ thống (tư liệu vẫn được giữ, chỉ bỏ liên
+                      kết).
                     </p>
                     <button
                       onClick={() => setConfirmDelete(true)}
                       className="flex shrink-0 items-center gap-1.5 rounded-full border border-danger/40 px-3.5 py-1.5 text-[12px] font-semibold text-danger transition-colors hover:bg-danger-soft"
                     >
                       <Trash size={13} />
-                      XÃ³a album
+                      Xóa album
                     </button>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-3 text-center">
                     <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-danger">
                       <Warning size={15} weight="bold" />
-                      XÃ³a vÄ©nh viá»…n &quot;{album.title}&quot;?
+                      Xóa vĩnh viễn &quot;{album.title}&quot;?
                     </p>
                     <div className="flex gap-2">
                       <button
@@ -490,13 +490,13 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
                         disabled={saving}
                         className="rounded-full bg-danger px-4 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-danger-hover disabled:opacity-50"
                       >
-                        Äá»“ng Ã½ xÃ³a
+                        Đồng ý xóa
                       </button>
                       <button
                         onClick={() => setConfirmDelete(false)}
                         className="rounded-full border border-line bg-bg px-4 py-2 text-[12px] font-medium text-ink-2 transition-colors hover:border-line-strong"
                       >
-                        Há»§y
+                        Hủy
                       </button>
                     </div>
                   </div>
@@ -510,7 +510,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
                 onClick={onClose}
                 className="rounded-full border border-line px-5 py-2.5 text-[13px] font-medium text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
               >
-                ÄÃ³ng
+                Đóng
               </button>
               <button
                 onClick={handleSave}
@@ -522,7 +522,7 @@ export function EditAlbumModal({ album, onClose, onSaved }: EditAlbumModalProps)
                 ) : (
                   <Check size={14} weight="bold" />
                 )}
-                {saving ? "Äang lÆ°u..." : "LÆ°u thay Ä‘á»•i"}
+                {saving ? "Đang lưu..." : "Lưu thay đổi"}
               </button>
             </div>
           </motion.div>

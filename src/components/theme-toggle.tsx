@@ -44,8 +44,8 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     <button
       onClick={toggle}
       className={`flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-line bg-surface text-ink-2 transition-[background-color,border-color,color] duration-200 hover:border-line-strong hover:text-ink active:scale-95 ${className}`}
-      aria-label={isDark ? "Chuyển sang chế độ sáng" : "Chuyển sang chế độ tối"}
-      title={isDark ? "Chế độ sáng" : "Chế độ tối"}
+      aria-label={isDark ? "Chuyển sang chủ đề sáng" : "Chuyển sang chủ đề tối"}
+      title={isDark ? "Chủ đề sáng" : "Chủ đề tối"}
     >
       {isDark ? (
         <Sun key="sun" size={17} className="toggle-icon-in" />
