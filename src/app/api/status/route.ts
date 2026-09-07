@@ -32,10 +32,10 @@ export async function GET() {
       });
       supabaseReachable = res.ok;
       if (!res.ok) {
-        supabaseError = res.status === 401 ? "API key không hợp lệ" : `HTTP ${res.status}`;
+        supabaseError = res.status === 401 ? "Key không hợp lệ" : `HTTP ${res.status}`;
       }
     } catch (e) {
-      supabaseError = e instanceof Error ? e.message : "Không kết nối được";
+      supabaseError = e instanceof Error && e.name === "TimeoutError" ? "Timeout" : "Lỗi kết nối";
     }
   }
 
@@ -53,7 +53,7 @@ export async function GET() {
       s3Reachable = res.status === 200 || res.status === 403 || res.status === 405;
       if (!s3Reachable) s3Error = `HTTP ${res.status}`;
     } catch (e) {
-      s3Error = e instanceof Error ? e.message : "Không kết nối được";
+      s3Error = e instanceof Error && e.name === "TimeoutError" ? "Timeout" : "Lỗi kết nối";
     }
   }
 

@@ -1775,35 +1775,35 @@ export default function AdminDashboardPage() {
 
         {/* ================= TAB: TRẠNG THÁI ================= */}
         {activeTab === "status" && (
-          <div className="mx-auto mt-8 max-w-3xl space-y-5">
-            <div className="space-y-5 rounded-2xl border border-line bg-surface p-6 md:p-8">
+          <div className="mx-auto mt-8 max-w-3xl space-y-4">
+            <div className="space-y-4 rounded-2xl border border-line bg-surface p-5 md:p-6">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-base font-semibold text-ink">
-                  Chẩn đoán hạ tầng trực tiếp
-                </h2>
+                <div>
+                  <h2 className="text-base font-semibold text-ink">
+                    Chẩn đoán hạ tầng
+                  </h2>
+                  {statusData && (
+                    <p className="mt-0.5 text-[11px] text-ink-3">
+                      {new Date(statusData.checkedAt).toLocaleString("vi-VN")}
+                    </p>
+                  )}
+                </div>
                 <button
                   onClick={fetchStatus}
                   disabled={loadingStatus}
-                  className="flex items-center gap-1.5 rounded-full border border-line px-3.5 py-2 text-[12px] font-medium text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+                  className="flex shrink-0 items-center gap-1.5 rounded-full border border-line px-3.5 py-2 text-[12px] font-medium text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
                 >
                   <ArrowsClockwise
                     size={13}
                     className={loadingStatus ? "animate-spin" : ""}
                   />
-                  <span>Kiểm tra lại</span>
+                  Kiểm tra lại
                 </button>
               </div>
 
-              {statusData && (
-                <p className="text-[11px] text-ink-3">
-                  Kiểm tra lúc:{" "}
-                  {new Date(statusData.checkedAt).toLocaleString("vi-VN")}
-                </p>
-              )}
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {/* Supabase */}
-                <div className="space-y-2.5 rounded-xl border border-line bg-bg p-5">
+                <div className="space-y-2 rounded-xl border border-line bg-bg p-4">
                   <div className="flex items-center justify-between gap-3">
                     <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
                       <Database size={16} weight="duotone" />
@@ -1812,11 +1812,11 @@ export default function AdminDashboardPage() {
                     {statusData?.supabase.configured ? (
                       statusData.supabase.reachable ? (
                         <span className="flex shrink-0 items-center gap-1 text-[12px] text-success">
-                          <CheckCircle size={15} weight="fill" /> Hoạt động
+                          <CheckCircle size={15} weight="fill" /> OK
                         </span>
                       ) : (
                         <span className="flex shrink-0 items-center gap-1 text-[12px] text-warning">
-                          <Warning size={15} weight="fill" /> Lỗi kết nối
+                          <Warning size={15} weight="fill" /> Lỗi
                         </span>
                       )
                     ) : (
@@ -1826,32 +1826,29 @@ export default function AdminDashboardPage() {
                     )}
                   </div>
                   <ul className="space-y-1.5 text-[12px] text-ink-3">
-                    <li className="flex justify-between">
+                    <li className="flex justify-between gap-3">
                       <span>Biến môi trường</span>
                       <span className={statusData?.supabase.configured ? "text-success" : "text-warning"}>
                         {statusData?.supabase.configured ? "Đủ" : "Thiếu"}
                       </span>
                     </li>
-                    <li className="flex justify-between">
-                      <span>Kết nối REST API</span>
+                    <li className="flex justify-between gap-3">
+                      <span>REST API</span>
                       <span className={statusData?.supabase.reachable ? "text-success" : ""}>
                         {statusData?.supabase.reachable ? "OK" : statusData?.supabase.error || "—"}
                       </span>
                     </li>
-                    <li className="flex justify-between">
-                      <span>Service Role Key (server)</span>
+                    <li className="flex justify-between gap-3">
+                      <span>Service Role Key</span>
                       <span className={statusData?.supabase.hasServiceKey ? "text-success" : "text-ink-3"}>
                         {statusData?.supabase.hasServiceKey ? "Có" : "Không"}
                       </span>
                     </li>
                   </ul>
-                  <p className="text-[11px] leading-relaxed text-ink-3">
-                    Lưu trữ metadata, album, tags và xác thực tài khoản quản trị viên.
-                  </p>
                 </div>
 
                 {/* S3 */}
-                <div className="space-y-2.5 rounded-xl border border-line bg-bg p-5">
+                <div className="space-y-2 rounded-xl border border-line bg-bg p-4">
                   <div className="flex items-center justify-between gap-3">
                     <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
                       <HardDrive size={16} weight="duotone" />
@@ -1860,11 +1857,11 @@ export default function AdminDashboardPage() {
                     {statusData?.s3.configured ? (
                       statusData.s3.reachable ? (
                         <span className="flex shrink-0 items-center gap-1 text-[12px] text-success">
-                          <CheckCircle size={15} weight="fill" /> Hoạt động
+                          <CheckCircle size={15} weight="fill" /> OK
                         </span>
                       ) : (
                         <span className="flex shrink-0 items-center gap-1 text-[12px] text-warning">
-                          <Warning size={15} weight="fill" /> Lỗi kết nối
+                          <Warning size={15} weight="fill" /> Lỗi
                         </span>
                       )
                     ) : (
@@ -1874,58 +1871,42 @@ export default function AdminDashboardPage() {
                     )}
                   </div>
                   <ul className="space-y-1.5 text-[12px] text-ink-3">
-                    <li className="flex justify-between">
+                    <li className="flex justify-between gap-3">
                       <span>Biến môi trường</span>
                       <span className={statusData?.s3.configured ? "text-success" : "text-warning"}>
                         {statusData?.s3.configured ? "Đủ" : "Thiếu"}
                       </span>
                     </li>
-                    <li className="flex justify-between">
-                      <span>Endpoint khả dụng</span>
+                    <li className="flex justify-between gap-3">
+                      <span>Endpoint</span>
                       <span className={statusData?.s3.reachable ? "text-success" : ""}>
                         {statusData?.s3.reachable ? "OK" : statusData?.s3.error || "—"}
                       </span>
                     </li>
-                    <li className="flex justify-between">
+                    <li className="flex justify-between gap-3">
                       <span>Bucket</span>
-                      <span className="font-mono">
+                      <span className="truncate font-mono" title={statusData?.s3.bucket || undefined}>
                         {statusData?.s3.bucket || "—"}
                       </span>
                     </li>
                   </ul>
-                  <p className="text-[11px] leading-relaxed text-ink-3">
-                    Kho file tĩnh qua Presigned URL, bỏ qua giới hạn 4.5MB của Vercel.
-                  </p>
                 </div>
               </div>
 
-              {/* Hướng dẫn */}
-              <div className="space-y-3 rounded-xl border border-line bg-bg p-5 text-[12px] leading-relaxed text-ink-2">
-                <h3 className="font-semibold text-ink">
-                  Hướng dẫn cấu hình `.env.local`:
-                </h3>
-                <ol className="list-inside list-decimal space-y-2 text-ink-3">
+              {/* Hướng dẫn — thu gọn */}
+              <details className="rounded-xl border border-line bg-bg px-4 py-3 text-[12px] leading-relaxed text-ink-2">
+                <summary className="cursor-pointer select-none font-medium text-ink">
+                  Hướng dẫn cấu hình `.env.local`
+                </summary>
+                <ol className="list-inside list-decimal space-y-2 pl-1 pt-3 text-ink-3">
                   <li>
-                    Copy toàn bộ nội dung{" "}
-                    <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-ink">
-                      the-archives/supabase/schema.sql
-                    </code>{" "}
-                    vào SQL Editor trên Supabase rồi Run.
+                    Chạy <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-ink">the-archives/supabase/schema.sql</code> trong SQL Editor trên Supabase.
                   </li>
                   <li>
-                    Điền URL và Anon Key vào{" "}
-                    <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-ink">
-                      NEXT_PUBLIC_SUPABASE_URL
-                    </code>{" "}
-                    và{" "}
-                    <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-ink">
-                      NEXT_PUBLIC_SUPABASE_ANON_KEY
-                    </code>
-                    .
+                    Điền <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-ink">NEXT_PUBLIC_SUPABASE_URL</code> và <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-ink">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>.
                   </li>
                   <li>
-                    Lấy Endpoint, Access Key, Secret Key, Bucket Name từ gói S3
-                    Starter 50GB trên{" "}
+                    Lấy thông tin S3 (Endpoint, Access Key, Secret Key, Bucket) từ gói S3 Starter 50GB trên{" "}
                     <a
                       href="https://one.pikamc.vn"
                       target="_blank"
@@ -1937,7 +1918,7 @@ export default function AdminDashboardPage() {
                     rồi điền vào `.env.local`.
                   </li>
                 </ol>
-              </div>
+              </details>
             </div>
           </div>
         )}
