@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
@@ -29,6 +29,8 @@ import {
   HardDrive,
   ArrowDown,
   CaretDown,
+  ListNumbers,
+  StopCircle,
 } from "@phosphor-icons/react";
 import { supabase, isSupabaseConfigured, authedFetch } from "@/lib/supabase";
 import { categories, getLiveAlbums, type Album, type MediaItem } from "@/lib/data";
@@ -52,6 +54,8 @@ interface UploadQueueItem {
   status: "pending" | "uploading" | "success" | "error";
   progress: number;
   errorMessage?: string;
+  startedAt?: number;
+  speedText?: string;
 }
 
 interface AdminMedia {
@@ -62,6 +66,7 @@ interface AdminMedia {
   date: string;
   type: "photo" | "video";
   src: string;
+  thumb_url: string | null;
   photographer: string;
   resolution: string;
   tags: string[];
@@ -135,11 +140,69 @@ function toMediaItem(m: AdminMedia, albums: Album[]): MediaItem {
   };
 }
 
+/* Tạo thumbnail WebP nhẹ (~30-60KB) cho ảnh — giảm tải gallery 100x */
+async function createImageThumbnail(file: File, maxW = 720, quality = 0.78): Promise<File | null> {
+  try {
+    const img = await createImageBitmap(file);
+    const scale = Math.min(1, maxW / img.width);
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    img.close();
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/webp", quality)
+    );
+    if (!blob) return null;
+    return new File([blob], "thumb.webp", { type: "image/webp" });
+  } catch {
+    return null;
+  }
+}
+
+/* PUT file lên presigned URL qua XHR — có progress % thật + tốc độ */
+function uploadWithProgress(
+  url: string,
+  file: File,
+  onProgress: (pct: number, speedText: string) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const started = Date.now();
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("Content-Type", file.type);
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      const pct = Math.round((e.loaded / e.total) * 100);
+      const secs = (Date.now() - started) / 1000;
+      const mbPerS = e.loaded / 1024 / 1024 / Math.max(secs, 0.001);
+      const speedText = mbPerS >= 1 ? `${mbPerS.toFixed(1)} MB/s` : `${(mbPerS * 1024).toFixed(0)} KB/s`;
+      onProgress(pct, speedText);
+    };
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`S3 trả về ${xhr.status}`)));
+    xhr.onerror = () => reject(new Error("Lỗi mạng khi đẩy file"));
+    xhr.onabort = () => reject(new Error("Đã hủy"));
+    xhr.send(file);
+  });
+}
+
 /* ================= Trang ================= */
 
 export default function AdminDashboardPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /* Mirror state queue cho worker đọc giá trị mới nhất không stale */
+  const [queue, setQueue] = useState<UploadQueueItem[]>([]);
+  const queueRef = useRef<UploadQueueItem[]>([]);
+
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
 
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [currentUser, setCurrentUser] = useState<string | null>(null);
@@ -173,13 +236,21 @@ export default function AdminDashboardPage() {
   const [showAlbumForm, setShowAlbumForm] = useState(false);
 
   /* Upload */
-  const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const [globalCategory, setGlobalCategory] = useState("Hoạt động Đoàn");
   const [globalYear, setGlobalYear] = useState("2026 - 2027");
   const [globalPhotographer, setGlobalPhotographer] = useState("CLB Truyền Thông");
   const [globalTags, setGlobalTags] = useState("Đoàn trường, THPT Vĩnh Thuận");
   const [globalAlbumId, setGlobalAlbumId] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadAbort, setUploadAbort] = useState<AbortController | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+
+  /* Tên album đang gán (slug không dấu) để auto-rename file */
+  const globalAlbumTitle = useMemo(
+    () =>
+      adminAlbums.find((a) => a.id === globalAlbumId)?.title.replace(/\s*\([^)]*\)\s*$/, "") || "",
+    [adminAlbums, globalAlbumId]
+  );
 
   /* Tạo album */
   const [albumTitle, setAlbumTitle] = useState("");
@@ -399,7 +470,41 @@ export default function AdminDashboardPage() {
     }
   };
 
-  /* ================= Lọc / sắp xếp ================= */
+  /* Đặt lại tên hàng loạt: "Ảnh [album] 1, 2, 3..." / "Video [album] 1, 2..." */
+  const handleBulkRename = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0 || !supabase) return;
+    if (!window.confirm(`Đặt lại tên ${ids.length} tư liệu đã chọn theo dạng "Ảnh/Video [album] số"?`))
+      return;
+
+    setBulkBusy(true);
+    try {
+      // Ảnh và video đánh số riêng; giữ thứ tự cũ nhất trước
+      const selected = existingMedia
+        .filter((m) => selectedIds.has(m.id))
+        .sort((a, b) => (a.created_at > b.created_at ? 1 : -1));
+
+      let photoIdx = 1;
+      let videoIdx = 1;
+      for (const m of selected) {
+        const album = adminAlbums.find((a) => a.id === m.album_id);
+        const base = album
+          ? stripVietnamese(album.title.replace(/\s*\([^)]*\)\s*$/, "")).trim()
+          : stripVietnamese(m.category).trim();
+        const name = m.type === "video" ? `Video ${base} ${videoIdx++}` : `Ảnh ${base} ${photoIdx++}`;
+        const { error } = await supabase.from("media_items").update({ title: name }).eq("id", m.id);
+        if (error) console.warn("Lỗi đổi tên:", m.id, error);
+      }
+      showMsg(`Đã đặt lại tên ${ids.length} tư liệu.`);
+      setSelectedIds(new Set());
+      await fetchExistingMedia();
+      notifySync();
+    } catch (err) {
+      showMsg(`Lỗi đổi tên: ${err instanceof Error ? err.message : "không xác định"}`);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   const filteredMedia = (() => {
     const q = manageSearch.trim().toLowerCase();
@@ -444,21 +549,50 @@ export default function AdminDashboardPage() {
 
   /* ================= Upload ================= */
 
+  /* Bỏ dấu tiếng Việt để tạo tiền tố an toàn cho tên file */
+  function stripVietnamese(text: string): string {
+    return text
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/đ/g, "d")
+      .replace(/Đ/g, "D");
+  }
+
+  /* Auto-rename: "Ảnh/Video [tiền tố] 1, 2, 3..." theo thứ tự chọn */
   const handleFilesSelected = (files: FileList | null) => {
     if (!files) return;
-    const newItems: UploadQueueItem[] = Array.from(files).map((file) => ({
-      file,
-      previewUrl: URL.createObjectURL(file),
-      title: file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " "),
-      category: globalCategory,
-      schoolYear: globalYear,
-      photographer: globalPhotographer,
-      tags: globalTags,
-      driveUrl: "",
-      albumId: globalAlbumId,
-      status: "pending",
-      progress: 0,
-    }));
+
+    const arr = Array.from(files);
+    const photoBase = globalAlbumTitle ? stripVietnamese(globalAlbumTitle).trim() : "";
+    let photoIdx = 1;
+    let videoIdx = 1;
+
+    const newItems: UploadQueueItem[] = arr.map((file) => {
+      const isVideo = file.type.startsWith("video");
+      let autoTitle: string;
+      if (isVideo) {
+        autoTitle = photoBase
+          ? `Video ${photoBase} ${videoIdx++}`
+          : `Video ${videoIdx++}`;
+      } else {
+        autoTitle = photoBase
+          ? `Ảnh ${photoBase} ${photoIdx++}`
+          : `Ảnh ${photoIdx++}`;
+      }
+      return {
+        file,
+        previewUrl: URL.createObjectURL(file),
+        title: autoTitle,
+        category: globalCategory,
+        schoolYear: globalYear,
+        photographer: globalPhotographer,
+        tags: globalTags,
+        driveUrl: "",
+        albumId: globalAlbumId,
+        status: "pending",
+        progress: 0,
+      };
+    });
     setQueue((prev) => [...prev, ...newItems]);
   };
 
@@ -471,103 +605,146 @@ export default function AdminDashboardPage() {
     });
   };
 
+  const updateQueueItem = (idx: number, patch: Partial<UploadQueueItem>) => {
+    setQueue((prev) => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], ...patch };
+      return copy;
+    });
+  };
+
+  /* Upload 1 file: presign → thumbnail (ảnh) → PUT song song gốc+thumb → lưu DB */
+  const uploadOne = async (idx: number, signal: AbortSignal): Promise<void> => {
+    const item = queueRef.current[idx];
+    if (!item || item.status === "success") return;
+
+    updateQueueItem(idx, { status: "uploading", progress: 4, startedAt: Date.now() });
+
+    // 1. Tạo thumbnail song song với presign
+    const [presignRes, thumbFile] = await Promise.all([
+      authedFetch("/api/upload/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName: item.file.name,
+          fileType: item.file.type,
+          albumTitle: item.albumId ? globalAlbumTitle : undefined,
+        }),
+      }),
+      item.file.type.startsWith("image") ? createImageThumbnail(item.file) : Promise.resolve(null),
+    ]);
+
+    if (!presignRes.ok) {
+      const errData = await presignRes.json();
+      throw new Error(errData.error || "Không thể tạo link ký upload");
+    }
+
+    const { uploadUrl, publicUrl } = await presignRes.json();
+    updateQueueItem(idx, { progress: 10 });
+
+    // 2. Đẩy file gốc (progress thật từ XHR)
+    await uploadWithProgress(uploadUrl, item.file, (pct, speedText) => {
+      // Giữ 10-85% cho progress của file gốc
+      updateQueueItem(idx, { progress: 10 + pct * 0.75, speedText });
+    });
+    if (signal.aborted) throw new Error("Đã hủy");
+
+    updateQueueItem(idx, { progress: 88 });
+
+    // 3. Đẩy thumbnail (nếu có) — không chặn lâu, fail thì bỏ qua
+    let thumbUrl: string | null = null;
+    if (thumbFile) {
+      try {
+        const tRes = await authedFetch("/api/upload/presign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: "thumb.webp", fileType: "image/webp" }),
+        });
+        if (tRes.ok) {
+          const { uploadUrl: tUrl, publicUrl: tPub } = await tRes.json();
+          await fetch(tUrl, { method: "PUT", headers: { "Content-Type": "image/webp" }, body: thumbFile });
+          thumbUrl = tPub;
+        }
+      } catch {
+        /* thumbnail thất bại không chặn upload chính */
+      }
+    }
+
+    updateQueueItem(idx, { progress: 92 });
+
+    // 4. Lưu metadata vào Supabase
+    if (supabase) {
+      const isVideo = item.file.type.startsWith("video");
+      const tagsArray = item.tags
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+      const { error: dbError } = await supabase.from("media_items").insert({
+        album_id: item.albumId || null,
+        title: item.title,
+        category: item.category,
+        school_year: item.schoolYear,
+        date: new Date().toLocaleDateString("vi-VN"),
+        type: isVideo ? "video" : "photo",
+        aspect: "landscape",
+        src: publicUrl,
+        thumb_url: thumbUrl,
+        photographer: item.photographer,
+        resolution: `${item.file.name.split(".").pop()?.toUpperCase() ?? ""} · ${(
+          item.file.size / (1024 * 1024)
+        ).toFixed(1)} MB`,
+        tags: tagsArray,
+        drive_url: item.driveUrl || null,
+      });
+
+      if (dbError) console.warn("Lưu database thất bại:", dbError);
+    }
+
+    updateQueueItem(idx, { status: "success", progress: 100 });
+  };
+
+  /* Pool 3 upload chạy song song — nhanh gấp ~2.5x so với tuần tự */
   const handleStartUpload = async () => {
     if (queue.length === 0) return;
     setIsUploading(true);
 
-    for (let i = 0; i < queue.length; i++) {
-      const item = queue[i];
-      if (item.status === "success") continue;
+    const abort = new AbortController();
+    setUploadAbort(abort);
 
-      setQueue((prev) => {
-        const copy = [...prev];
-        copy[i] = { ...copy[i], status: "uploading", progress: 10 };
-        return copy;
-      });
+    const indexes = queue
+      .map((_, i) => i)
+      .filter((i) => queue[i].status !== "success");
 
-      try {
-        const presignRes = await authedFetch("/api/upload/presign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileName: item.file.name,
-            fileType: item.file.type,
-            albumTitle: item.title,
-          }),
-        });
-
-        if (!presignRes.ok) {
-          const errData = await presignRes.json();
-          throw new Error(errData.error || "Không thể tạo link ký upload");
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < indexes.length && !abort.signal.aborted) {
+        const idx = indexes[cursor++];
+        try {
+          await uploadOne(idx, abort.signal);
+        } catch (err) {
+          if (abort.signal.aborted) {
+            updateQueueItem(idx, { status: "pending", progress: 0 });
+          } else {
+            updateQueueItem(idx, {
+              status: "error",
+              errorMessage: err instanceof Error ? err.message : "Tải lên thất bại",
+            });
+          }
         }
-
-        const { uploadUrl, publicUrl } = await presignRes.json();
-
-        setQueue((prev) => {
-          const copy = [...prev];
-          copy[i] = { ...copy[i], progress: 40 };
-          return copy;
-        });
-
-        const uploadRes = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: { "Content-Type": item.file.type },
-          body: item.file,
-        });
-
-        if (!uploadRes.ok) throw new Error("Không thể đẩy file lên kho S3");
-
-        setQueue((prev) => {
-          const copy = [...prev];
-          copy[i] = { ...copy[i], progress: 80 };
-          return copy;
-        });
-
-        if (supabase) {
-          const isVideo = item.file.type.startsWith("video");
-          const tagsArray = item.tags
-            .split(",")
-            .map((t) => t.trim())
-            .filter(Boolean);
-
-          const { error: dbError } = await supabase.from("media_items").insert({
-            album_id: item.albumId || null,
-            title: item.title,
-            category: item.category,
-            school_year: item.schoolYear,
-            date: new Date().toLocaleDateString("vi-VN"),
-            type: isVideo ? "video" : "photo",
-            aspect: "landscape",
-            src: publicUrl,
-            photographer: item.photographer,
-            resolution: `${item.file.name.split(".").pop()?.toUpperCase() ?? ""} · ${(
-              item.file.size / (1024 * 1024)
-            ).toFixed(1)} MB`,
-            tags: tagsArray,
-            drive_url: item.driveUrl || null,
-          });
-
-          if (dbError) console.warn("Lưu database thất bại:", dbError);
-        }
-
-        setQueue((prev) => {
-          const copy = [...prev];
-          copy[i] = { ...copy[i], status: "success", progress: 100 };
-          return copy;
-        });
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : "Tải lên thất bại";
-        setQueue((prev) => {
-          const copy = [...prev];
-          copy[i] = { ...copy[i], status: "error", errorMessage: errorMsg };
-          return copy;
-        });
       }
-    }
+    };
+
+    await Promise.all([worker(), worker(), worker()]);
 
     setIsUploading(false);
+    setUploadAbort(null);
     fetchExistingMedia();
     notifySync();
+  };
+
+  const handleStopUpload = () => {
+    uploadAbort?.abort();
   };
 
   /* ================= Tạo album ================= */
@@ -1049,10 +1226,24 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
 
-              {/* Dropzone */}
-              <button
+              {/* Dropzone — kéo thả thật */}
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragActive(true);
+                }}
+                onDragLeave={() => setDragActive(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragActive(false);
+                  handleFilesSelected(e.dataTransfer.files);
+                }}
                 onClick={() => fileInputRef.current?.click()}
-                className="group w-full cursor-pointer rounded-2xl border-2 border-dashed border-line bg-surface/50 p-8 text-center transition-colors duration-200 hover:border-line-strong"
+                className={`group w-full cursor-pointer rounded-2xl border-2 border-dashed p-8 text-center transition-colors duration-200 ${
+                  dragActive
+                    ? "border-accent bg-accent-soft/50"
+                    : "border-line bg-surface/50 hover:border-line-strong"
+                }`}
               >
                 <input
                   ref={fileInputRef}
@@ -1062,16 +1253,20 @@ export default function AdminDashboardPage() {
                   className="hidden"
                   onChange={(e) => handleFilesSelected(e.target.files)}
                 />
-                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-2 text-ink-2 transition-transform duration-200 group-hover:scale-105">
+                <span
+                  className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full transition-all duration-200 group-hover:scale-105 ${
+                    dragActive ? "bg-accent-soft text-accent scale-110" : "bg-surface-2 text-ink-2"
+                  }`}
+                >
                   <UploadSimple size={22} />
                 </span>
                 <span className="mt-4 block text-sm font-semibold text-ink">
-                  Kéo thả hoặc bấm để chọn ảnh / video
+                  {dragActive ? "Thả file vào đây!" : "Kéo thả hoặc bấm để chọn ảnh / video"}
                 </span>
                 <span className="mt-1 block text-[12px] text-ink-3">
                   PNG, JPG, RAW, MP4, MOV — không giới hạn qua S3
                 </span>
-              </button>
+              </div>
             </div>
 
             {/* Queue */}
@@ -1082,34 +1277,66 @@ export default function AdminDashboardPage() {
                     Hàng đợi ({queue.length} file)
                   </h2>
                   <p className="text-[12px] text-ink-3">
-                    File được ký link và đẩy trực tiếp lên kho S3 PIKAMC.
+                    3 file đẩy song song · tên tự đánh số theo album.
                   </p>
                 </div>
                 {queue.length > 0 && (
                   <div className="flex shrink-0 gap-2">
-                    <button
-                      onClick={() => setQueue([])}
-                      disabled={isUploading}
-                      className="rounded-full border border-line px-3.5 py-2.5 text-[12px] text-ink-2 transition-colors hover:border-line-strong disabled:opacity-50"
-                    >
-                      Xóa hàng đợi
-                    </button>
-                    <button
-                      onClick={handleStartUpload}
-                      disabled={isUploading}
-                      className="flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-[13px] font-semibold text-white transition-colors duration-200 hover:bg-accent-hover disabled:opacity-50"
-                    >
-                      <UploadSimple size={15} weight="bold" />
-                      <span className="hidden sm:inline">
-                        {isUploading ? "Đang đẩy..." : "Tải lên tất cả"}
-                      </span>
-                      <span className="sm:hidden">
-                        {isUploading ? "..." : "Tải lên"}
-                      </span>
-                    </button>
+                    {isUploading ? (
+                      <button
+                        onClick={handleStopUpload}
+                        className="flex items-center gap-2 rounded-full border border-danger/40 bg-danger-soft px-4 py-2.5 text-[12px] font-semibold text-danger transition-colors hover:border-danger/60"
+                      >
+                        <StopCircle size={14} weight="fill" />
+                        Dừng
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => setQueue([])}
+                          className="rounded-full border border-line px-3.5 py-2.5 text-[12px] text-ink-2 transition-colors hover:border-line-strong"
+                        >
+                          Xóa hàng đợi
+                        </button>
+                        <button
+                          onClick={handleStartUpload}
+                          className="flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-[13px] font-semibold text-white transition-colors duration-200 hover:bg-accent-hover active:scale-[0.98]"
+                        >
+                          <UploadSimple size={15} weight="bold" />
+                          <span className="hidden sm:inline">Tải lên tất cả</span>
+                          <span className="sm:hidden">Tải lên</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
+
+              {/* Thanh tổng quan đợt upload */}
+              {isUploading && (
+                <div className="space-y-2 rounded-2xl border border-accent/25 bg-accent-soft/60 px-5 py-4">
+                  <div className="flex items-center justify-between text-[12px]">
+                    <span className="flex items-center gap-1.5 font-semibold text-ink">
+                      <SpinnerGap size={14} className="animate-spin text-accent" />
+                      Đang tải {queue.filter((q) => q.status === "uploading").length} / còn{" "}
+                      {queue.filter((q) => q.status === "pending").length} chờ
+                    </span>
+                    <span className="font-semibold text-accent tabular-nums">
+                      {queue.filter((q) => q.status === "success").length}/{queue.length} xong
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-surface-2">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-accent to-accent-hover transition-[width] duration-300 ease-out"
+                      style={{
+                        width: `${Math.round(
+                          (queue.filter((q) => q.status === "success").length / Math.max(queue.length, 1)) * 100
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
 
               {queue.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center text-[13px] text-ink-3">
@@ -1125,13 +1352,15 @@ export default function AdminDashboardPage() {
                           ? "border-success/30 bg-success-soft/40"
                           : item.status === "error"
                             ? "border-danger/30 bg-danger-soft/40"
-                            : "border-line bg-surface"
+                            : item.status === "uploading"
+                              ? "border-accent/40 bg-accent-soft/30"
+                              : "border-line bg-surface"
                       }`}
                     >
                       <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-bg">
                         {item.file.type.startsWith("video") ? (
-                          <div className="flex h-full w-full items-center justify-center font-mono text-[10px] text-accent">
-                            VIDEO
+                          <div className="flex h-full w-full items-center justify-center text-accent">
+                            <VideoCamera size={20} weight="duotone" />
                           </div>
                         ) : (
                           <Image
@@ -1142,13 +1371,18 @@ export default function AdminDashboardPage() {
                             sizes="56px"
                           />
                         )}
+                        {item.status === "uploading" && (
+                          <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-[11px] font-bold text-white tabular-nums">
+                            {Math.round(item.progress)}%
+                          </span>
+                        )}
                       </div>
 
                       <div className="min-w-0 flex-1 space-y-1">
                         <input
                           type="text"
                           value={item.title}
-                          disabled={item.status === "success"}
+                          disabled={item.status === "success" || item.status === "uploading"}
                           onChange={(e) => {
                             const val = e.target.value;
                             setQueue((prev) => {
@@ -1164,28 +1398,28 @@ export default function AdminDashboardPage() {
                             {(item.file.size / (1024 * 1024)).toFixed(1)} MB
                           </span>
                           <span>·</span>
-                          <span>{item.category}</span>
-                          <span>·</span>
-                          <span>
-                            {item.albumId
-                              ? adminAlbums.find((a) => a.id === item.albumId)
-                                  ?.title || "Album"
-                              : "Không album"}
-                          </span>
+                          <span className="truncate">{item.category}</span>
                         </div>
 
                         {item.status === "uploading" && (
-                          <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
-                            <div
-                              className="h-full bg-accent transition-all duration-300"
-                              style={{ width: `${item.progress}%` }}
-                            />
-                          </div>
+                          <>
+                            <div className="progress-shimmer h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-accent to-accent-hover transition-[width] duration-200 ease-out"
+                                style={{ width: `${item.progress}%` }}
+                              />
+                            </div>
+                            {item.speedText && (
+                              <span className="block text-[10px] text-ink-3 tabular-nums">
+                                {item.speedText} · {Math.round(item.progress)}%
+                              </span>
+                            )}
+                          </>
                         )}
                         {item.status === "success" && (
                           <span className="flex items-center gap-1 text-[11px] text-success">
                             <CheckCircle size={12} weight="fill" />
-                            Đã lưu vào S3 và Supabase
+                            Hoàn tất
                           </span>
                         )}
                         {item.status === "error" && (
@@ -1393,6 +1627,18 @@ export default function AdminDashboardPage() {
                   />
                 </div>
                 <button
+                  onClick={handleBulkRename}
+                  disabled={bulkBusy}
+                  className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent-soft px-4 py-2 text-[12px] font-semibold text-accent transition-colors hover:border-accent/60 disabled:opacity-50"
+                >
+                  {bulkBusy ? (
+                    <SpinnerGap size={13} className="animate-spin" />
+                  ) : (
+                    <ListNumbers size={13} />
+                  )}
+                  Đổi tên hàng loạt
+                </button>
+                <button
                   onClick={handleBulkMove}
                   disabled={!bulkAlbumId || bulkBusy}
                   className="flex items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
@@ -1478,8 +1724,9 @@ export default function AdminDashboardPage() {
 
                           <div className="relative h-18 w-18 shrink-0 overflow-hidden rounded-lg border border-line bg-bg">
                             <img
-                              src={formatSrc(m.src)}
+                              src={m.thumb_url ? formatSrc(m.thumb_url) : formatSrc(m.src)}
                               alt={m.title}
+                              loading="lazy"
                               className="h-full w-full object-cover"
                               onError={(e) => {
                                 (e.target as HTMLImageElement).src = "/logo.jpg";

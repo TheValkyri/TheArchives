@@ -204,6 +204,22 @@ video::-webkit-media-controls-panel {
   -webkit-mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
 }
 
+/* ---- Progress bar upload: shimmer chạy trên thanh đang đổ ---- */
+@keyframes progress-shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+.progress-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in srgb, white 38%, transparent) 45%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: progress-shimmer 1.15s linear infinite;
+}
+
 /* ---- Icon toggle theme ---- */
 @keyframes icon-in {
   0%   { transform: rotate(-90deg) scale(0.6); opacity: 0; }

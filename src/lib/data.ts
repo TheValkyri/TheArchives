@@ -11,6 +11,7 @@ export interface MediaItem {
   type: "photo" | "video";
   aspect: "landscape" | "portrait" | "square";
   src: string;
+  thumbUrl?: string;
   photographer: string;
   resolution: string;
   tags: string[];
@@ -144,6 +145,7 @@ export async function getLiveMediaItems(): Promise<MediaItem[]> {
       type: item.type,
       aspect: item.aspect || "landscape",
       src: formatMediaSrc(item.src),
+      thumbUrl: item.thumb_url ? formatMediaSrc(item.thumb_url) : undefined,
       photographer: item.photographer,
       resolution: item.resolution || "Full HD",
       tags: item.tags || [],

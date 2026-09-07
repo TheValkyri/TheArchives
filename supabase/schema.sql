@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS public.media_items (
     type TEXT NOT NULL CHECK (type IN ('photo', 'video')),
     aspect TEXT NOT NULL DEFAULT 'landscape' CHECK (aspect IN ('landscape', 'portrait', 'square')),
     src TEXT NOT NULL,
+    thumb_url TEXT,
     photographer TEXT NOT NULL DEFAULT 'CLB Truyền Thông',
     resolution TEXT DEFAULT 'Full HD',
     tags TEXT[] DEFAULT '{}',
@@ -33,6 +34,9 @@ CREATE TABLE IF NOT EXISTS public.media_items (
     video_duration TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Cột thumbnail (thêm mới cho DB đã tạo trước đó)
+ALTER TABLE public.media_items ADD COLUMN IF NOT EXISTS thumb_url TEXT;
 
 -- Index tìm kiếm nhanh
 CREATE INDEX IF NOT EXISTS idx_media_category ON public.media_items(category);

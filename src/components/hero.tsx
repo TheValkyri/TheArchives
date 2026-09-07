@@ -146,10 +146,11 @@ export function Hero() {
                 aria-label={`Xem ${img.title}`}
               >
                 <Image
-                  src={img.src}
+                  src={img.thumbUrl || img.src}
                   alt={img.title}
                   fill
                   unoptimized
+                  loading="lazy"
                   className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                   sizes="256px"
                 />

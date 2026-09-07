@@ -16,7 +16,7 @@ interface GalleryCardProps {
 export function GalleryCard({ item, index, onClick }: GalleryCardProps) {
   const root = useRef<HTMLElement>(null);
 
-  // Vào view: phóng từ 0.92 lên 1. Ra khỏi view: mờ dần.
+  // Vào view: phóng nhẹ 1 lần (once) — KHÔNG scrub khi cuộn (32+ card sẽ lag)
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce) return;
@@ -25,32 +25,20 @@ export function GalleryCard({ item, index, onClick }: GalleryCardProps) {
     const ctx = gsap.context(() => {
       gsap.fromTo(
         root.current,
-        { scale: 0.92, opacity: 0.35 },
+        { scale: 0.94, opacity: 0 },
         {
           scale: 1,
           opacity: 1,
-          duration: 0.7,
-          delay: (index % 4) * 0.05,
-          ease: "power4.out",
+          duration: 0.55,
+          delay: (index % 6) * 0.04,
+          ease: "power3.out",
           scrollTrigger: {
             trigger: root.current,
-            start: "top 92%",
+            start: "top 94%",
             once: true,
           },
         }
       );
-
-      gsap.to(root.current, {
-        opacity: 0.25,
-        scale: 0.96,
-        ease: "none",
-        scrollTrigger: {
-          trigger: root.current,
-          start: "top -8%",
-          end: "top -45%",
-          scrub: 0.6,
-        },
-      });
     }, root);
 
     return () => ctx.revert();
@@ -63,11 +51,14 @@ export function GalleryCard({ item, index, onClick }: GalleryCardProps) {
         ? "aspect-square"
         : "aspect-[4/3]";
 
+  // Card dùng thumbnail nhẹ; lightbox vẫn dùng file gốc
+  const displaySrc = item.thumbUrl || item.src;
+
   return (
     <article
       ref={root}
       onClick={onClick}
-      className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-line bg-surface transition-colors duration-300 hover:border-line-strong ${aspectClass}`}
+      className={`group relative cursor-pointer overflow-hidden rounded-2xl border border-line bg-surface-2 transition-colors duration-300 hover:border-line-strong ${aspectClass}`}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -79,10 +70,11 @@ export function GalleryCard({ item, index, onClick }: GalleryCardProps) {
       aria-label={`Xem chi tiết ${item.title}`}
     >
       <Image
-        src={item.src}
+        src={displaySrc}
         alt={item.title}
         fill
         unoptimized
+        loading="lazy"
         className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
         sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
       />

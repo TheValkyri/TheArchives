@@ -43,9 +43,12 @@ export async function POST(req: NextRequest) {
       .replace(/[^a-z0-9.]/g, "-")
       .replace(/-+/g, "-");
 
-    const folder = albumTitle
-      ? albumTitle.toLowerCase().replace(/[^a-z0-9]/g, "-")
-      : "general";
+    // Prefix "thumbs/" cho thumbnail để dễ phân biệt với file gốc
+    const folder = fileName === "thumb.webp"
+      ? "thumbs"
+      : albumTitle
+        ? albumTitle.toLowerCase().replace(/[^a-z0-9]/g, "-")
+        : "general";
 
     const timestamp = Date.now();
     const fileKey = `archives/${folder}/${timestamp}-${sanitizedFileName}`;
