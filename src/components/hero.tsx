@@ -5,20 +5,18 @@ import Image from "next/image";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { ArrowDown, Eye } from "@phosphor-icons/react";
-import { getLiveMediaItems, type MediaItem } from "@/lib/data";
+import type { MediaItem } from "@/lib/data";
 import { MediaLightbox } from "./media-lightbox";
 import { SkyAmbient } from "./sky-ambient";
 
-export function Hero() {
-  const [latestMedia, setLatestMedia] = useState<MediaItem[]>([]);
+interface HeroProps {
+  initialItems: MediaItem[];
+}
+
+export function Hero({ initialItems }: HeroProps) {
+  const [latestMedia, setLatestMedia] = useState<MediaItem[]>(initialItems);
   const [activeItem, setActiveItem] = useState<MediaItem | null>(null);
   const root = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    getLiveMediaItems().then((items) => {
-      if (items) setLatestMedia(items.slice(0, 6));
-    });
-  }, []);
 
   // GSAP reveal: dòng chữ, CTA và dải ảnh
   useEffect(() => {
@@ -138,7 +136,7 @@ export function Hero() {
           className="no-scrollbar marquee-mask flex gap-4 overflow-x-auto pb-2"
         >
           {latestMedia.length > 0 ? (
-            latestMedia.map((img) => (
+            latestMedia.map((img, i) => (
               <button
                 key={img.id}
                 onClick={() => setActiveItem(img)}
@@ -151,6 +149,9 @@ export function Hero() {
                   fill
                   unoptimized
                   loading="lazy"
+                  decoding="async"
+                  // Ảnh đầu trong viewport trên mobile — ưu tiên fetch
+                  fetchPriority={i === 0 ? "high" : "auto"}
                   className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                   sizes="256px"
                 />

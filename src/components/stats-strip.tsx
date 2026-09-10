@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useInView, useReducedMotion } from "motion/react";
-import { stats, getLiveStats, type StatItem } from "@/lib/data";
+import { stats as defaultStats, type StatItem } from "@/lib/data";
 
 function CountUp({ value, active }: { value: number; active: boolean }) {
   const [display, setDisplay] = useState(0);
@@ -26,16 +26,16 @@ function CountUp({ value, active }: { value: number; active: boolean }) {
   return <span className="tabular-nums">{display.toLocaleString("vi-VN")}</span>;
 }
 
-export function StatsStrip() {
-  const [statList, setStatList] = useState<StatItem[]>(stats);
+interface StatsStripProps {
+  initialStats?: StatItem[];
+}
+
+export function StatsStrip({ initialStats }: StatsStripProps) {
+  const [statList, setStatList] = useState<StatItem[]>(
+    initialStats && initialStats.length > 0 ? initialStats : defaultStats
+  );
   const ref = useRef<HTMLElement>(null);
   const inView = useInView(ref, { once: true, amount: 0.4 });
-
-  useEffect(() => {
-    getLiveStats().then((live) => {
-      if (live && live.length > 0) setStatList(live);
-    });
-  }, []);
 
   return (
     <section

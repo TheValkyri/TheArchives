@@ -62,6 +62,23 @@ export function MediaLightbox({
     };
   }, [item]);
 
+  /* Preload item kế tiếp — chuyển ảnh liền mạch, không flash đen */
+  useEffect(() => {
+    if (!item) return;
+    const next = items[currentIndex + 1];
+    if (!next) return;
+
+    const link = document.createElement("link");
+    link.rel = "preload";
+    // Ảnh: preload file gốc; video: preload thumb poster cho lần tới
+    link.as = "image";
+    link.href = next.type === "photo" ? next.src : next.thumbUrl || next.src;
+    document.head.appendChild(link);
+    return () => {
+      document.head.removeChild(link);
+    };
+  }, [item, items, currentIndex]);
+
   // Swipe điều hướng trên mobile
   const touchStartX = useRef<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
@@ -199,9 +216,11 @@ export function MediaLightbox({
               {item.type === "video" ? (
                 <video
                   src={item.src}
+                  poster={item.thumbUrl || undefined}
                   controls
                   playsInline
                   autoPlay
+                  preload="metadata"
                   className="h-full w-full object-contain"
                   aria-label={item.title}
                 >
@@ -215,6 +234,7 @@ export function MediaLightbox({
                   unoptimized
                   className="object-contain"
                   priority
+                  decoding="async"
                   sizes="(max-width: 1280px) 95vw, 1024px"
                 />
               )}

@@ -120,6 +120,68 @@ export function formatMediaSrc(src: string): string {
   return src;
 }
 
+// Cột tối thiểu cần cho UI grid — bỏ payload thừa (resolution, tags... chỉ
+// dùng trong lightbox nhưng đã có sẵn trong item) khi list toàn bảng
+const MEDIA_COLUMNS = [
+  "id",
+  "title",
+  "category",
+  "school_year",
+  "date",
+  "album_id",
+  "type",
+  "aspect",
+  "src",
+  "thumb_url",
+  "photographer",
+  "resolution",
+  "tags",
+  "drive_url",
+  "video_duration",
+].join(",");
+
+/* Supabase row → MediaItem ( Chuẩn hóa 1 chỗ, dùng chung mọi query )
+ * type tường minh để tránh `any`Implicit khi map raw row */
+interface MediaRow {
+  id: string;
+  title: string;
+  category: string;
+  school_year: string;
+  date: string;
+  album_id: string | null;
+  type: "photo" | "video";
+  aspect: "landscape" | "portrait" | "square" | null;
+  src: string;
+  thumb_url: string | null;
+  photographer: string;
+  resolution: string | null;
+  tags: string[] | null;
+  drive_url: string | null;
+  video_duration: string | null;
+  albums?: { title: string } | null;
+}
+
+function toMediaItem(item: MediaRow, albumTitle?: string): MediaItem {
+  return {
+    id: item.id,
+    title: item.title,
+    category: item.category,
+    schoolYear: item.school_year,
+    date: item.date,
+    album: albumTitle ?? item.albums?.title ?? "Chung",
+    albumId: item.album_id ?? undefined,
+    type: item.type,
+    aspect: item.aspect || "landscape",
+    src: formatMediaSrc(item.src),
+    thumbUrl: item.thumb_url ? formatMediaSrc(item.thumb_url) : undefined,
+    photographer: item.photographer,
+    resolution: item.resolution || "Full HD",
+    tags: item.tags || [],
+    driveUrl: item.drive_url || undefined,
+    videoDuration: item.video_duration || undefined,
+  };
+}
+
 // Hàm lấy dữ liệu động từ Supabase (nếu đã kết nối)
 export async function getLiveMediaItems(): Promise<MediaItem[]> {
   if (!isSupabaseConfigured || !supabase) {
@@ -129,29 +191,12 @@ export async function getLiveMediaItems(): Promise<MediaItem[]> {
   try {
     const { data, error } = await supabase
       .from("media_items")
-      .select("*, albums(title)")
+      .select(`${MEDIA_COLUMNS}, albums(title)`)
       .order("created_at", { ascending: false });
 
     if (error || !data) return [];
 
-    return data.map((item) => ({
-      id: item.id,
-      title: item.title,
-      category: item.category,
-      schoolYear: item.school_year,
-      date: item.date,
-      album: item.albums?.title || "Chung",
-      albumId: item.album_id,
-      type: item.type,
-      aspect: item.aspect || "landscape",
-      src: formatMediaSrc(item.src),
-      thumbUrl: item.thumb_url ? formatMediaSrc(item.thumb_url) : undefined,
-      photographer: item.photographer,
-      resolution: item.resolution || "Full HD",
-      tags: item.tags || [],
-      driveUrl: item.drive_url || undefined,
-      videoDuration: item.video_duration || undefined,
-    }));
+    return (data as unknown as MediaRow[]).map((item) => toMediaItem(item));
   } catch {
     return [];
   }
@@ -163,29 +208,16 @@ export async function getLiveAlbums(): Promise<Album[]> {
   }
 
   try {
+    // albums + đếm media qua aggregate count của PostgREST — 1 query,
+    // không full-scan media_items
     const { data, error } = await supabase
       .from("albums")
-      .select("*")
+      .select(
+        "id, title, description, school_year, cover_url, drive_folder_url, media_items(count)"
+      )
       .order("created_at", { ascending: false });
 
     if (error || !data) return [];
-
-    // Đếm số tư liệu thuộc từng album theo album_id
-    const { data: mediaData, error: mediaError } = await supabase
-      .from("media_items")
-      .select("album_id");
-
-    const countByAlbum = new Map<string, number>();
-    if (!mediaError && mediaData) {
-      for (const row of mediaData) {
-        if (row.album_id) {
-          countByAlbum.set(
-            row.album_id,
-            (countByAlbum.get(row.album_id) || 0) + 1
-          );
-        }
-      }
-    }
 
     return data.map((album) => ({
       id: album.id,
@@ -193,10 +225,54 @@ export async function getLiveAlbums(): Promise<Album[]> {
       description: album.description || "",
       schoolYear: album.school_year,
       cover: formatMediaSrc(album.cover_url),
-      count: countByAlbum.get(album.id) || 0,
+      count: album.media_items?.[0]?.count ?? 0,
       driveFolderUrl: album.drive_folder_url || undefined,
     }));
   } catch {
     return [];
+  }
+}
+
+/* Lấy 1 album + toàn bộ tư liệu thuộc album — dùng cho trang /album/[id] (server) */
+export async function getAlbumWithItems(
+  albumId: string
+): Promise<{ album: Album | null; items: MediaItem[] }> {
+  if (!isSupabaseConfigured || !supabase) {
+    return { album: null, items: [] };
+  }
+
+  try {
+    const { data: albumData, error: albumError } = await supabase
+      .from("albums")
+      .select("id, title, description, school_year, cover_url, drive_folder_url")
+      .eq("id", albumId)
+      .maybeSingle();
+
+    if (albumError || !albumData) return { album: null, items: [] };
+
+    const { data: mediaData, error: mediaError } = await supabase
+      .from("media_items")
+      .select(MEDIA_COLUMNS)
+      .eq("album_id", albumId)
+      .order("created_at", { ascending: false });
+
+    const items: MediaItem[] = (mediaData || []).map(
+      (raw: unknown) => toMediaItem(raw as MediaRow, albumData.title)
+    );
+
+    return {
+      album: {
+        id: albumData.id,
+        title: albumData.title,
+        description: albumData.description || "",
+        schoolYear: albumData.school_year,
+        cover: formatMediaSrc(albumData.cover_url),
+        count: items.length,
+        driveFolderUrl: albumData.drive_folder_url || undefined,
+      },
+      items: mediaError ? [] : items,
+    };
+  } catch {
+    return { album: null, items: [] };
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MagnifyingGlass,
   X,
@@ -11,7 +11,13 @@ import {
 import { FilterPills } from "./filter-pills";
 import { GalleryCard } from "./gallery-card";
 import { MediaLightbox } from "./media-lightbox";
-import { mediaItems, schoolYears, getLiveMediaItems, type MediaItem } from "@/lib/data";
+import {
+  mediaItems,
+  schoolYears,
+  getLiveAlbums,
+  type MediaItem,
+  type Album,
+} from "@/lib/data";
 
 const PAGE_SIZE = 24;
 const SORT_OPTIONS = [
@@ -21,19 +27,91 @@ const SORT_OPTIONS = [
 
 type SortOrder = (typeof SORT_OPTIONS)[number]["value"];
 
-export function GalleryGrid() {
-  const [items, setItems] = useState<MediaItem[]>(mediaItems);
+/**
+ * 1 IntersectionObserver duy nhất cho toàn lưới — thay cho GSAP ScrollTrigger
+ * per-card (24-100+ trigger sống đồng thời gây jank khi cuộn).
+ * Toggle class .card-hidden → .card-in (transition CSS, cheap, once).
+ */
+function useCardReveal() {
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      grid.querySelectorAll(".card-hidden").forEach((el) =>
+        el.classList.add("card-in")
+      );
+      return;
+    }
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("card-in");
+            io.unobserve(entry.target);
+          }
+        }
+      },
+      { rootMargin: "0px 0px -6% 0px", threshold: 0.05 }
+    );
+
+    grid.querySelectorAll(".card-hidden:not(.card-in)").forEach((el) =>
+      io.observe(el)
+    );
+
+    return () => io.disconnect();
+  });
+
+  return gridRef;
+}
+
+interface GalleryGridProps {
+  initialItems?: MediaItem[];
+  initialAlbums?: Album[];
+}
+
+export function GalleryGrid({ initialItems, initialAlbums }: GalleryGridProps) {
+  const [items, setItems] = useState<MediaItem[]>(
+    initialItems && initialItems.length > 0 ? initialItems : mediaItems
+  );
+  // Server đã truyền albums qua props — chỉ refetch khi thiếu (trang tĩnh
+  // chưa có data) hoặc khi admin vừa cập nhật qua storage event
+  const [albumList, setAlbumList] = useState<Album[]>(initialAlbums ?? []);
+  // Lazy initializer: đọc ?album=<id> 1 lần ngay khi mount — không cần effect
+  const [selectedAlbum, setSelectedAlbum] = useState<string>(() => {
+    if (typeof window === "undefined") return "all";
+    return new URLSearchParams(window.location.search).get("album") || "all";
+  });
   const [activeCategory, setActiveCategory] = useState("Tất cả");
   const [selectedYear, setSelectedYear] = useState<string>("Tất cả năm");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [activeItem, setActiveItem] = useState<MediaItem | null>(null);
+  const gridRef = useCardReveal();
 
   useEffect(() => {
-    getLiveMediaItems().then((live) => {
-      if (live) setItems(live);
+    if (albumList.length > 0) return;
+    getLiveAlbums().then((live) => {
+      if (live) setAlbumList(live);
     });
+  }, [albumList.length]);
+
+  /* Admin đăng media mới → refresh danh sách qua storage event (notifySync) */
+  useEffect(() => {
+    const onStorage = () => {
+      Promise.all([
+        import("@/lib/data").then(({ getLiveMediaItems }) => getLiveMediaItems()),
+        getLiveAlbums(),
+      ]).then(([live, liveAlbums]) => {
+        if (live.length > 0) setItems(live);
+        if (liveAlbums.length > 0) setAlbumList(liveAlbums);
+      });
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const filteredItems = useMemo(() => {
@@ -42,6 +120,8 @@ export function GalleryGrid() {
         activeCategory === "Tất cả" || item.category === activeCategory;
       const matchYear =
         selectedYear === "Tất cả năm" || item.schoolYear === selectedYear;
+      const matchAlbum =
+        selectedAlbum === "all" || item.albumId === selectedAlbum;
       const query = searchQuery.trim().toLowerCase();
       const matchSearch =
         query === "" ||
@@ -49,13 +129,13 @@ export function GalleryGrid() {
         item.album.toLowerCase().includes(query) ||
         item.photographer.toLowerCase().includes(query) ||
         item.tags.some((tag) => tag.toLowerCase().includes(query));
-      return matchCategory && matchYear && matchSearch;
+      return matchCategory && matchYear && matchAlbum && matchSearch;
     });
 
     // getLiveMediaItems đã sort created_at desc → "Mới nhất" giữ nguyên,
     // "Cũ nhất" đảo chiều
     return sortOrder === "oldest" ? [...filtered].reverse() : filtered;
-  }, [items, activeCategory, selectedYear, searchQuery, sortOrder]);
+  }, [items, activeCategory, selectedYear, selectedAlbum, searchQuery, sortOrder]);
 
   const visibleItems = useMemo(
     () => filteredItems.slice(0, visibleCount),
@@ -66,11 +146,13 @@ export function GalleryGrid() {
   const hasActiveFilters =
     activeCategory !== "Tất cả" ||
     selectedYear !== "Tất cả năm" ||
+    selectedAlbum !== "all" ||
     searchQuery.trim() !== "";
 
   const resetFilters = () => {
     setActiveCategory("Tất cả");
     setSelectedYear("Tất cả năm");
+    setSelectedAlbum("all");
     setSearchQuery("");
     setVisibleCount(PAGE_SIZE);
   };
@@ -83,6 +165,11 @@ export function GalleryGrid() {
 
   const changeYear = (year: string) => {
     setSelectedYear(year);
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  const changeAlbum = (id: string) => {
+    setSelectedAlbum(id);
     setVisibleCount(PAGE_SIZE);
   };
 
@@ -159,6 +246,22 @@ export function GalleryGrid() {
               />
             </div>
 
+            {albumList.length > 0 && (
+              <select
+                value={selectedAlbum}
+                onChange={(e) => changeAlbum(e.target.value)}
+                className="cursor-pointer rounded-full border border-line bg-surface px-3.5 py-2 text-[13px] text-ink transition-colors duration-200 hover:border-line-strong focus:outline-none"
+                aria-label="Lọc theo album"
+              >
+                <option value="all">Mọi album</option>
+                {albumList.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.title} ({a.count})
+                  </option>
+                ))}
+              </select>
+            )}
+
             <select
               value={selectedYear}
               onChange={(e) => changeYear(e.target.value)}
@@ -196,6 +299,7 @@ export function GalleryGrid() {
 
         {/* Grid — phân trang bằng Tải thêm */}
         <div
+          ref={gridRef}
           className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
           style={{ gridAutoFlow: "dense" }}
         >

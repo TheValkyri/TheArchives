@@ -40,9 +40,10 @@ function Cloud({
           "--cloud-dur": `${dur}s`,
           animationDelay: `${-delay}s`,
           opacity,
+          // radial-gradient vốn đã mềm — KHÔNG dùng filter: blur(28px)
+          // vì animate phần tử đang blur xé GPU, rơi dưới 60fps trên máy yếu
           background:
             "radial-gradient(50% 60% at 30% 55%, currentColor, transparent 70%), radial-gradient(45% 70% at 68% 45%, currentColor, transparent 72%)",
-          filter: "blur(28px)",
         } as React.CSSProperties
       }
       aria-hidden="true"

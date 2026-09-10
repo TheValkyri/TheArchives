@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   Images,
   ArrowRight,
@@ -10,14 +11,21 @@ import {
   CaretLeft,
   CaretRight,
   PencilSimple,
+  DownloadSimple,
 } from "@phosphor-icons/react";
 
 import { getLiveAlbums, type Album } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { EditAlbumModal } from "./edit-album-modal";
 
-export function FeaturedAlbums() {
-  const [albumList, setAlbumList] = useState<Album[]>([]);
+interface FeaturedAlbumsProps {
+  initialAlbums?: Album[];
+}
+
+export function FeaturedAlbums({ initialAlbums }: FeaturedAlbumsProps) {
+  const [albumList, setAlbumList] = useState<Album[]>(
+    initialAlbums && initialAlbums.length > 0 ? initialAlbums : []
+  );
   const [isAdmin, setIsAdmin] = useState(false);
   const [editingAlbum, setEditingAlbum] = useState<Album | null>(null);
 
@@ -27,9 +35,12 @@ export function FeaturedAlbums() {
     });
   }, []);
 
+  // Server đã truyền qua props — bỏ refetch ngay khi mount, chỉ lắng nghe
+  // storage event (admin vừa cập nhật album) + auth state để hiện nút sửa
   useEffect(() => {
+    if (albumList.length > 0) return;
     loadAlbums();
-  }, [loadAlbums]);
+  }, [albumList.length, loadAlbums]);
 
   /* Lắng nghe storage event từ admin (notifySync) + tự refresh */
   useEffect(() => {
@@ -131,14 +142,33 @@ export function FeaturedAlbums() {
         {albumList.map((album) => (
           <article
             key={album.id}
-            className="group w-[320px] shrink-0 snap-start overflow-hidden rounded-2xl border border-line bg-bg transition-colors duration-300 hover:border-line-strong sm:w-[400px]"
+            className="group relative w-[320px] shrink-0 snap-start overflow-hidden rounded-2xl border border-line bg-bg transition-colors duration-300 hover:border-line-strong sm:w-[400px]"
           >
+            {/* Nút chỉnh sửa — chỉ admin nhìn thấy, đặt NGOÀI Link để
+                không lồng interactive element (HTML hợp lệ) */}
+            {isAdmin && (
+              <button
+                onClick={() => setEditingAlbum(album)}
+                className="absolute top-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-[background-color,transform] duration-200 hover:scale-105 hover:bg-accent"
+                aria-label={`Chỉnh sửa album ${album.title}`}
+                title="Chỉnh sửa album"
+              >
+                <PencilSimple size={16} />
+              </button>
+            )}
+
+            <Link
+              href={`/album/${album.id}`}
+              className="block"
+              aria-label={`Xem album ${album.title}`}
+            >
             <div className="relative aspect-[16/10] overflow-hidden">
               <Image
                 src={album.cover}
                 alt={album.title}
                 fill
                 unoptimized
+                loading="lazy"
                 className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03]"
                 sizes="400px"
               />
@@ -147,24 +177,13 @@ export function FeaturedAlbums() {
                 {album.schoolYear}
               </span>
 
-              {/* Nút chỉnh sửa — chỉ admin nhìn thấy */}
-              {isAdmin && (
-                <button
-                  onClick={() => setEditingAlbum(album)}
-                  className="absolute top-3 right-3 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-[background-color,transform] duration-200 hover:scale-105 hover:bg-accent"
-                  aria-label={`Chỉnh sửa album ${album.title}`}
-                  title="Chỉnh sửa album"
-                >
-                  <PencilSimple size={16} />
-                </button>
-              )}
-
               <div className="absolute inset-x-4 bottom-3">
                 <h3 className="text-lg font-semibold text-white">
                   {album.title}
                 </h3>
               </div>
             </div>
+            </Link>
 
             <div className="space-y-3 p-4">
               <p className="line-clamp-2 text-[13px] leading-relaxed text-ink-3">
@@ -188,14 +207,24 @@ export function FeaturedAlbums() {
                       <ArrowSquareOut size={11} />
                     </a>
                   )}
-                  <a
-                    href="#gallery"
+                  <Link
+                    href={`/album/${album.id}`}
                     className="group/btn flex items-center gap-1.5 rounded-full bg-accent py-1.5 pr-1.5 pl-3 text-[12px] font-semibold text-white transition-colors duration-200 hover:bg-accent-hover"
                   >
-                    Xem ảnh
+                    Xem album
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25 transition-transform duration-200 group-hover/btn:translate-x-0.5">
                       <ArrowRight size={10} weight="bold" />
                     </span>
+                  </Link>
+                  {/* Trực tiếp stream ZIP — server set Content-Disposition:
+                      attachment nên trình duyệt tự lưu xuống đĩa, không rời trang */}
+                  <a
+                    href={`/api/album/${album.id}/zip`}
+                    aria-label={`Tải ZIP toàn bộ album ${album.title}`}
+                    title="Tải ZIP toàn bộ album"
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-2 text-ink-2 transition-colors duration-200 hover:bg-line hover:text-ink"
+                  >
+                    <DownloadSimple size={13} />
                   </a>
                 </span>
               </div>

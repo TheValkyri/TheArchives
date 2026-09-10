@@ -140,8 +140,21 @@ function toMediaItem(m: AdminMedia, albums: Album[]): MediaItem {
   };
 }
 
+/* Kích thước thật → aspect CSS */
+function aspectFromSize(w: number, h: number): "landscape" | "portrait" | "square" {
+  const ratio = w / h;
+  if (ratio > 1.2) return "landscape";
+  if (ratio < 0.83) return "portrait";
+  return "square";
+}
+
+interface ThumbResult {
+  file: File;
+  aspect: "landscape" | "portrait" | "square";
+}
+
 /* Tạo thumbnail WebP nhẹ (~30-60KB) cho ảnh — giảm tải gallery 100x */
-async function createImageThumbnail(file: File, maxW = 720, quality = 0.78): Promise<File | null> {
+async function createImageThumbnail(file: File, maxW = 720, quality = 0.78): Promise<ThumbResult | null> {
   try {
     const img = await createImageBitmap(file);
     const scale = Math.min(1, maxW / img.width);
@@ -158,10 +171,77 @@ async function createImageThumbnail(file: File, maxW = 720, quality = 0.78): Pro
       canvas.toBlob(resolve, "image/webp", quality)
     );
     if (!blob) return null;
-    return new File([blob], "thumb.webp", { type: "image/webp" });
+    return {
+      file: new File([blob], "thumb.webp", { type: "image/webp" }),
+      aspect: aspectFromSize(img.width, img.height),
+    };
   } catch {
     return null;
   }
+}
+
+/* Tạo thumbnail cho VIDEO: nạp frame ~1s → canvas → WebP poster */
+async function createVideoThumbnail(file: File, maxW = 720, quality = 0.78): Promise<ThumbResult | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.crossOrigin = "anonymous";
+
+    const cleanup = (result: ThumbResult | null) => {
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(url);
+      resolve(result);
+    };
+
+    const timeout = setTimeout(() => cleanup(null), 12000);
+
+    video.onloadeddata = () => {
+      video.currentTime = Math.min(1, (video.duration || 2) / 3);
+    };
+
+    video.onseeked = () => {
+      try {
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+        if (!vw || !vh) return cleanup(null);
+        const scale = Math.min(1, maxW / vw);
+        const w = Math.round(vw * scale);
+        const h = Math.round(vh * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return cleanup(null);
+        ctx.drawImage(video, 0, 0, w, h);
+        canvas.toBlob(
+          (blob) => {
+            clearTimeout(timeout);
+            if (!blob) return cleanup(null);
+            cleanup({
+              file: new File([blob], "thumb.webp", { type: "image/webp" }),
+              aspect: aspectFromSize(vw, vh),
+            });
+          },
+          "image/webp",
+          quality
+        );
+      } catch {
+        clearTimeout(timeout);
+        cleanup(null);
+      }
+    };
+
+    video.onerror = () => {
+      clearTimeout(timeout);
+      cleanup(null);
+    };
+
+    video.src = url;
+  });
 }
 
 /* PUT file lên presigned URL qua XHR — có progress % thật + tốc độ */
@@ -620,8 +700,9 @@ export default function AdminDashboardPage() {
 
     updateQueueItem(idx, { status: "uploading", progress: 4, startedAt: Date.now() });
 
-    // 1. Tạo thumbnail song song với presign
-    const [presignRes, thumbFile] = await Promise.all([
+    // 1. Tạo thumbnail song song với presign (cả ảnh và video)
+    const isVideo = item.file.type.startsWith("video");
+    const [presignRes, thumb] = await Promise.all([
       authedFetch("/api/upload/presign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -631,7 +712,7 @@ export default function AdminDashboardPage() {
           albumTitle: item.albumId ? globalAlbumTitle : undefined,
         }),
       }),
-      item.file.type.startsWith("image") ? createImageThumbnail(item.file) : Promise.resolve(null),
+      isVideo ? createVideoThumbnail(item.file) : createImageThumbnail(item.file),
     ]);
 
     if (!presignRes.ok) {
@@ -653,7 +734,7 @@ export default function AdminDashboardPage() {
 
     // 3. Đẩy thumbnail (nếu có) — không chặn lâu, fail thì bỏ qua
     let thumbUrl: string | null = null;
-    if (thumbFile) {
+    if (thumb) {
       try {
         const tRes = await authedFetch("/api/upload/presign", {
           method: "POST",
@@ -662,7 +743,7 @@ export default function AdminDashboardPage() {
         });
         if (tRes.ok) {
           const { uploadUrl: tUrl, publicUrl: tPub } = await tRes.json();
-          await fetch(tUrl, { method: "PUT", headers: { "Content-Type": "image/webp" }, body: thumbFile });
+          await fetch(tUrl, { method: "PUT", headers: { "Content-Type": "image/webp" }, body: thumb.file });
           thumbUrl = tPub;
         }
       } catch {
@@ -674,7 +755,6 @@ export default function AdminDashboardPage() {
 
     // 4. Lưu metadata vào Supabase
     if (supabase) {
-      const isVideo = item.file.type.startsWith("video");
       const tagsArray = item.tags
         .split(",")
         .map((t) => t.trim())
@@ -687,7 +767,7 @@ export default function AdminDashboardPage() {
         school_year: item.schoolYear,
         date: new Date().toLocaleDateString("vi-VN"),
         type: isVideo ? "video" : "photo",
-        aspect: "landscape",
+        aspect: thumb?.aspect || "landscape",
         src: publicUrl,
         thumb_url: thumbUrl,
         photographer: item.photographer,
